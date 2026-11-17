@@ -14,10 +14,12 @@ type IntegrationStatus = { netbox: ProviderStatus; zabbix: ProviderStatus; demo_
 type InventoryItem = { external_id: string; name: string; status: string | null; device_type: string | null; device_height?: number | null; role: string | null; site: string | null; tenant: string | null; rack: string | null; position: number | null; face: string | null; primary_ip: string | null; source: string; monitoring_status?: string; match_method?: string | null; zabbix_hosts?: { external_id: string; technical_name: string; name: string; status: string }[] };
 type NetBoxRack = { external_id: string; name: string; site: string | null; u_height: number | null; facility: string | null; status: string | null };
 type TriggerItem = { external_id: string; title: string; priority: string; last_change: string; hosts: { hostid: string; host: string; name: string }[]; source: string };
+type HostMetric = { item_id: string; name: string; key: string; category: string; value: string | null; numeric_value: number | null; units: string; last_clock: number; value_type: string; source: string };
+type HostMetricsPayload = { demo: boolean; host_id: string; count: number; metrics: HostMetric[]; summary: Record<string, HostMetric[]> };
 type TopologyEndpoint = { interface_id: string; interface_name: string; interface_label: string; interface_type: string | null; enabled: boolean | null; device_id: string; device_name: string; device_type: string | null; role: string | null; site: string | null; device_status: string | null };
-type TopologyNode = { id: string; name: string; device_type: string | null; role: string | null; site: string | null; asset_status: string | null; interface_count: number; interfaces: { id: string; name: string; label: string; type: string | null; enabled: boolean | null }[] };
+type TopologyNode = { id: string; name: string; device_type: string | null; role: string | null; site: string | null; asset_status: string | null; primary_ip?: string | null; interface_count: number; interfaces: { id: string; name: string; label: string; type: string | null; enabled: boolean | null }[]; monitoring_status?: string; monitoring_availability?: string; zabbix_host?: { external_id: string; technical_name: string; name: string; status: string; availability: string } | null; zabbix_candidates?: { external_id: string; technical_name: string; name: string; status: string }[]; active_trigger_count?: number; critical_trigger_count?: number; warning_trigger_count?: number };
 type TopologyLink = { id: string; cable_id: string; label: string; status: string | null; type: string | null; color: string | null; length: number | null; length_unit: string | null; a: TopologyEndpoint; b: TopologyEndpoint };
-type TopologyData = { source: string; demo: boolean; nodes: TopologyNode[]; links: TopologyLink[]; connection_count: number; device_count: number; unsupported_cable_count: number; cable_count: number; returned_cable_count?: number; has_more: boolean; message?: string };
+type TopologyData = { source: string; demo: boolean; nodes: TopologyNode[]; links: TopologyLink[]; connection_count: number; device_count: number; unsupported_cable_count: number; cable_count: number; returned_cable_count?: number; has_more: boolean; message?: string; monitoring_source?: string; monitoring_message?: string; matched_count?: number; ambiguous_count?: number; unmonitored_count?: number; active_trigger_count?: number };
 
 const fallback: Overview = {
   demo: true,
@@ -117,7 +119,7 @@ function App() {
           <section className="bottom-grid"><div className="panel incidents-panel"><div className="panel-header"><div><h2>Recent incidents</h2><p>Events requiring operator attention</p></div><button className="text-button">Incident center <ArrowUpRight size={14}/></button></div><div className="incident-list">{data.incidents.map((incident) => <div className="incident-row" key={incident.id}><div className={`severity-icon ${incident.severity}`}><AlertCircle size={16}/></div><div className="incident-main"><b>{incident.title}</b><small>{incident.id} <span>•</span> {incident.device}</small></div><span className={`severity-pill ${incident.severity}`}>{incident.severity}</span><small className="incident-age">{incident.age} ago</small></div>)}</div></div>
           <div className="panel integrations-panel"><div className="panel-header"><div><h2>Platform integrations</h2><p>Connected infrastructure services</p></div><button className="more-button">•••</button></div><Integration icon={<Boxes size={18}/>} name="NetBox" desc="Inventory & IPAM" state={providerLabel(integrations?.netbox)}/><Integration icon={<Activity size={18}/>} name="Zabbix" desc="Monitoring & alerting" state={providerLabel(integrations?.zabbix)}/><Integration icon={<Gauge size={18}/>} name="Grafana" desc="Metrics visualization" state="Local service"/></div></section>
 
-          <footer><span>InfraVision NOC <b>v0.7.0</b></span><span><span className="pulse"/> All systems nominal <span className="footer-sep">•</span> Built for modern NOC teams</span></footer>
+          <footer><span>InfraVision NOC <b>v0.8.0</b></span><span><span className="pulse"/> All systems nominal <span className="footer-sep">•</span> Built for modern NOC teams</span></footer>
           </>}
           {active === "Inventory" && <InventoryPage devices={inventory} demo={inventoryDemo} fallback={data.devices} />}
           {active === "Datacenter" && <DatacenterPage />}
@@ -154,6 +156,30 @@ function InventoryPage({ devices, demo, fallback }: { devices: InventoryItem[]; 
     role: null, site: item.site, tenant: "Demo tenant", rack: null, position: null,
     face: null, primary_ip: item.ip, source: "demo", monitoring_status: "demo",
   })) : devices;
+  const api = import.meta.env.VITE_API_URL || "http://localhost:8000";
+  const [selectedDeviceId, setSelectedDeviceId] = useState("");
+  const [hostMetrics, setHostMetrics] = useState<HostMetricsPayload | null>(null);
+  const [metricsLoading, setMetricsLoading] = useState(false);
+  const selectedItem = rows.find((item) => item.external_id === selectedDeviceId) || rows[0] || null;
+  const matchedHostId = selectedItem?.monitoring_status === "matched"
+    ? selectedItem.zabbix_hosts?.[0]?.external_id || ""
+    : "";
+
+  useEffect(() => {
+    let active = true;
+    if (!matchedHostId) {
+      setHostMetrics(null);
+      setMetricsLoading(false);
+      return () => { active = false; };
+    }
+    setMetricsLoading(true);
+    fetch(`${api}/api/monitoring/hosts/${encodeURIComponent(matchedHostId)}/metrics`)
+      .then((response) => { if (!response.ok) throw new Error("Zabbix metric query failed"); return response.json(); })
+      .then((payload: HostMetricsPayload) => { if (active) setHostMetrics(payload); })
+      .catch(() => { if (active) setHostMetrics(null); })
+      .finally(() => { if (active) setMetricsLoading(false); });
+    return () => { active = false; };
+  }, [api, matchedHostId]);
 
   return <div className="page-stack">
     <PageTitle eyebrow="ASSET MANAGEMENT • INVENTORY" title="Infrastructure inventory" description="NetBox assets correlated with their Zabbix monitoring hosts."/>
@@ -167,10 +193,30 @@ function InventoryPage({ devices, demo, fallback }: { devices: InventoryItem[]; 
     <div className="panel inventory-panel">
       <div className="panel-header"><div><h2>Device registry</h2><p>{demo ? "Illustrative data set" : "Live NetBox inventory"}</p></div><span className={demo ? "source-pill demo" : "source-pill live"}>{demo ? "DEMO SOURCE" : "NETBOX + ZABBIX"}</span></div>
       <div className="table-scroll"><table><thead><tr><th>DEVICE</th><th>DEVICE TYPE</th><th>SITE</th><th>RACK</th><th>POSITION</th><th>TENANT</th><th>PRIMARY IP</th><th>STATUS</th><th>MONITORING</th></tr></thead><tbody>
-        {rows.map((item) => <tr key={item.external_id}><td><div className="device-name"><div className="device-icon"><Server size={16}/></div><b>{item.name}</b></div></td><td>{item.device_type || item.role || "—"}</td><td>{item.site || "—"}</td><td>{item.rack || "Unassigned"}</td><td>{item.position ? `U${item.position} · ${item.face || "—"}` : "—"}</td><td>{item.tenant || "—"}</td><td className="mono">{item.primary_ip || "—"}</td><td><Status status={item.status === "active" || item.status === "online" ? "online" : item.status === "offline" ? "critical" : "warning"}/></td><td><MonitoringBadge status={item.monitoring_status || (demo ? "demo" : "unmonitored")} method={item.match_method}/></td></tr>)}
+        {rows.map((item) => <tr key={item.external_id}><td><div className="device-name"><div className="device-icon"><Server size={16}/></div><button className="device-link" onClick={() => setSelectedDeviceId(item.external_id)} aria-pressed={selectedItem?.external_id === item.external_id}>{item.name}</button></div></td><td>{item.device_type || item.role || "—"}</td><td>{item.site || "—"}</td><td>{item.rack || "Unassigned"}</td><td>{item.position ? `U${item.position} · ${item.face || "—"}` : "—"}</td><td>{item.tenant || "—"}</td><td className="mono">{item.primary_ip || "—"}</td><td><Status status={item.status === "active" || item.status === "online" ? "online" : item.status === "offline" ? "critical" : "warning"}/></td><td><MonitoringBadge status={item.monitoring_status || (demo ? "demo" : "unmonitored")} method={item.match_method}/></td></tr>)}
       </tbody></table>{rows.length === 0 && <div className="empty-state">No devices returned by NetBox. Check the token permissions and inventory filters.</div>}</div>
       <div className="table-footer">Showing {rows.length} inventory records <span>Read-only synchronization</span></div>
     </div>
+    {selectedItem && <section className="panel host-metrics-panel">
+      <div className="panel-header"><div><h2>{selectedItem.name} · Monitoring details</h2><p>{matchedHostId ? `Zabbix host ID ${matchedHostId}` : "No unique Zabbix host is linked to this asset."}</p></div><span className={matchedHostId ? "source-pill live" : "source-pill demo"}>{matchedHostId ? "ZABBIX HOST" : "NO METRIC SOURCE"}</span></div>
+      {metricsLoading ? <div className="empty-state">Loading latest monitored items from Zabbix…</div>
+        : matchedHostId && hostMetrics?.metrics.length ? <>
+          <div className="host-metric-grid">
+            {(["cpu", "memory", "disk", "network_in", "network_out"] as const).map((category) => {
+              const metric = hostMetrics.summary[category]?.[0];
+              const label = category === "network_in" ? "Network received" : category === "network_out" ? "Network sent" : category.toUpperCase();
+              const value = metric ? `${metric.value ?? "N/A"}${metric.units ? ` ${metric.units}` : ""}` : "Not available";
+              return <div className="host-metric-card" key={category}><span>{label}</span><b>{value}</b><small>{metric?.name || "No matching item reported"}</small></div>;
+            })}
+          </div>
+          <div className="table-scroll"><table><thead><tr><th>ITEM</th><th>CATEGORY</th><th>LAST VALUE</th><th>KEY</th><th>LAST UPDATE</th></tr></thead><tbody>
+            {hostMetrics.metrics.slice(0, 20).map((metric) => <tr key={metric.item_id}><td>{metric.name}</td><td><span className="source-pill demo">{metric.category}</span></td><td className="mono">{metric.value ?? "—"} {metric.units}</td><td className="mono">{metric.key}</td><td>{metric.last_clock ? new Date(metric.last_clock * 1000).toLocaleString() : "—"}</td></tr>)}
+          </tbody></table></div>
+          <div className="table-footer">Showing {Math.min(hostMetrics.count, 20)} of {hostMetrics.count} monitored items <span>Latest values from Zabbix · read-only</span></div>
+        </> : matchedHostId ? <div className="empty-state">Zabbix returned no enabled monitored items for this host.</div>
+        : selectedItem.monitoring_status === "ambiguous" ? <div className="empty-state">Multiple Zabbix hosts matched this asset. No metrics were attached automatically. Candidates: {selectedItem.zabbix_hosts?.map((host) => host.name || host.technical_name).join(", ") || "Not available"}.</div>
+        : <div className="empty-state">This asset has no unique Zabbix host match. Check its hostname and management IP mapping before associating metrics.</div>}
+    </section>}
   </div>;
 }
 
@@ -292,7 +338,7 @@ function TopologyPage() {
   useEffect(() => {
     let active = true;
     setLoading(true);
-    fetch(`${api}/api/topology/connections`)
+    fetch(`${api}/api/topology/monitoring`)
       .then((response) => { if (!response.ok) throw new Error("NetBox topology query failed"); return response.json(); })
       .then((payload: TopologyData) => {
         if (!active) return;
@@ -324,18 +370,21 @@ function TopologyPage() {
   const canvasHeight = Math.max(210, Math.ceil(data.nodes.length / 3) * 160 + 50);
   const activeLink = data.links.find((link) => link.id === selectedLink) || null;
   const activeNode = data.nodes.find((node) => node.id === selectedNode) || null;
-  const sourceLabel = data.demo ? "DEMONSTRATION GRAPH" : "LIVE NETBOX CABLES";
+  const sourceLabel = data.demo ? "DEMONSTRATION GRAPH" : data.monitoring_source === "zabbix" ? "NETBOX + ZABBIX" : "LIVE NETBOX CABLES";
 
   return <div className="page-stack">
     <PageTitle eyebrow="NETWORK OPERATIONS • TOPOLOGY" title="Network topology" description="Physical device-to-device links derived from NetBox cable terminations and interface records."/>
     {data.demo
       ? <div className="demo-banner"><span><ShieldCheck size={15}/> DEMONSTRATION TOPOLOGY</span><p>{error || "This sample network is fictional. Configure NetBox to map real direct interface-to-interface cable connections."}</p></div>
-      : <div className="demo-banner live-rack-banner"><span><CheckCircle2 size={15}/> LIVE NETBOX TOPOLOGY</span><p>Nodes and edges represent direct cable terminations between device interfaces. NetBox inventory state is not a Zabbix health status.</p></div>}
+      : <div className="demo-banner live-rack-banner"><span><CheckCircle2 size={15}/> LIVE NETBOX TOPOLOGY</span><p>{data.monitoring_message || "Physical links and device records are loaded from NetBox."}</p></div>}
+    {!data.demo && data.monitoring_source === "not_configured" && <div className="topology-warning"><AlertCircle size={15}/> NetBox topology is live, but Zabbix is not configured. Device health and incident counts are not available yet.</div>}
+    {!data.demo && data.monitoring_source === "unavailable" && <div className="topology-warning"><AlertCircle size={15}/> Zabbix could not be queried. Physical connectivity remains available from NetBox, but host health is unknown.</div>}
+    {!data.demo && (data.ambiguous_count || 0) > 0 && <div className="topology-warning"><AlertCircle size={15}/> {data.ambiguous_count} device records have ambiguous Zabbix host matches. No host state was assigned automatically.</div>}
     <div className="topology-summary">
       <div className="panel"><span>Devices connected</span><b>{data.device_count}</b></div>
       <div className="panel"><span>Direct cable links</span><b>{data.connection_count}</b></div>
-      <div className="panel"><span>Cables returned</span><b>{data.returned_cable_count ?? data.cable_count}</b></div>
-      <div className="panel"><span>Unsupported terminations</span><b>{data.unsupported_cable_count}</b></div>
+      <div className="panel"><span>Zabbix matched</span><b>{data.monitoring_source === "zabbix" ? data.matched_count ?? 0 : "—"}</b></div>
+      <div className="panel"><span>Active problems</span><b>{data.monitoring_source === "zabbix" ? data.active_trigger_count ?? 0 : "—"}</b></div>
     </div>
     {data.has_more && <div className="topology-warning"><AlertCircle size={15}/> NetBox returned more cables than the current 500-record query limit. Refine the inventory or add paginated synchronization.</div>}
     {data.unsupported_cable_count > 0 && <div className="topology-warning"><AlertCircle size={15}/> {data.unsupported_cable_count} cable records do not have direct interface terminations on both ends. Patch-panel and pass-through path tracing is not included yet.</div>}
@@ -371,7 +420,7 @@ function TopologyPage() {
                 return <button key={node.id} className={selectedNode === node.id ? "topology-device-node selected" : "topology-device-node"} style={{left:position.x,top:position.y}} onClick={() => { setSelectedNode(node.id); setSelectedLink(""); }}>
                   <span className="topology-device-icon"><Network size={17}/></span>
                   <span className="topology-device-copy"><b>{node.name}</b><small>{typeLabel}</small><small>{node.site || "Site not set"}</small></span>
-                  <span className="topology-device-ports">{node.interface_count} IF</span>
+                  <span className="topology-node-badges"><span className="topology-device-ports">{node.interface_count} IF</span><span className={`monitor-chip ${monitoringClass(node, data.demo)}`}>{monitoringLabel(node, data.demo)}</span>{!data.demo && (node.active_trigger_count || 0) > 0 && <span className="topology-alert-count">{node.active_trigger_count} ALERTS</span>}</span>
                 </button>;
               })}
             </div></div>}
@@ -387,10 +436,11 @@ function TopologyPage() {
           <div className="detail-list"><div><span>Cable status</span><b>{activeLink.status || "Not specified"}</b></div><div><span>Cable type</span><b>{activeLink.type || "Not specified"}</b></div><div><span>Length</span><b>{activeLink.length ? `${activeLink.length} ${activeLink.length_unit || ""}` : "Not specified"}</b></div><div><span>NetBox cable ID</span><b>#{activeLink.cable_id}</b></div></div>
         </> : activeNode ? <>
           <span className="rack-kicker">DEVICE</span><h3>{activeNode.name}</h3><p className="rack-model">{activeNode.device_type || activeNode.role || "Infrastructure device"}</p>
-          <div className="detail-list"><div><span>Site</span><b>{activeNode.site || "Not specified"}</b></div><div><span>NetBox status</span><b>{activeNode.asset_status || "Not specified"}</b></div><div><span>Interfaces in graph</span><b>{activeNode.interface_count}</b></div></div>
+          <div className="detail-list"><div><span>Site</span><b>{activeNode.site || "Not specified"}</b></div><div><span>NetBox status</span><b>{activeNode.asset_status || "Not specified"}</b></div><div><span>Management IP</span><b className="mono">{activeNode.primary_ip || "Not set"}</b></div><div><span>Interfaces in graph</span><b>{activeNode.interface_count}</b></div><div><span>Zabbix match</span><b>{activeNode.zabbix_host?.name || monitoringLabel(activeNode, data.demo)}</b></div><div><span>Host availability</span><b>{data.demo ? "Sample data" : activeNode.monitoring_availability || "Unknown"}</b></div><div><span>Active triggers</span><b>{data.demo ? "Not connected" : activeNode.active_trigger_count ?? "—"}</b></div><div><span>Critical / warnings</span><b>{data.demo ? "—" : `${activeNode.critical_trigger_count ?? 0} / ${activeNode.warning_trigger_count ?? 0}`}</b></div></div>
+          {activeNode.monitoring_status === "ambiguous" && <div className="topology-warning"><AlertCircle size={14}/> Multiple Zabbix hosts match this asset: {activeNode.zabbix_candidates?.map((item) => item.name || item.technical_name).join(", ")}.</div>}
           <div className="topology-interface-list">{activeNode.interfaces.map((item) => <div key={item.id}><b>{item.name}</b><small>{item.type || "Interface"} · {item.enabled ? "Enabled" : "Disabled"}</small></div>)}</div>
         </> : <div className="empty-state">Click a device to review its connected interfaces, or click a line to inspect the cable and both endpoints.</div>}
-        <small className="demo-note">{data.demo ? "All nodes and links on this page are fictional demonstration data." : "Physical relationships from NetBox. Operational telemetry and interface state require Zabbix."}</small>
+        <small className="demo-note">{data.demo ? "All nodes, links and sample labels on this page are fictional demonstration data." : "Cable endpoints and device inventory come from NetBox. Host availability and trigger counts come from Zabbix; interface-level telemetry remains in Grafana."}</small>
       </aside>
     </div>
   </div>;
@@ -430,7 +480,7 @@ function IntegrationsPage({ integrations }: { integrations: IntegrationStatus | 
 function SettingsPage() {
   return <div className="page-stack">
     <PageTitle eyebrow="PLATFORM MANAGEMENT • CONFIGURATION" title="Settings" description="Local environment information and operational safety controls."/>
-    <div className="panel settings-panel"><h2>Environment</h2><div className="settings-row"><span>Application version</span><b>0.7.0</b></div><div className="settings-row"><span>Runtime mode</span><b>Development</b></div><div className="settings-row"><span>API base URL</span><b>http://localhost:8000</b></div><div className="settings-row"><span>Frontend</span><b>React + Vite</b></div><div className="settings-row"><span>Backend</span><b>FastAPI + Python</b></div></div>
+    <div className="panel settings-panel"><h2>Environment</h2><div className="settings-row"><span>Application version</span><b>0.8.0</b></div><div className="settings-row"><span>Runtime mode</span><b>Development</b></div><div className="settings-row"><span>API base URL</span><b>http://localhost:8000</b></div><div className="settings-row"><span>Frontend</span><b>React + Vite</b></div><div className="settings-row"><span>Backend</span><b>FastAPI + Python</b></div></div>
     <div className="panel settings-panel"><h2>Security baseline</h2><div className="security-check"><ShieldCheck size={17}/><div><b>Secrets are environment-based</b><small>Keep API tokens in .env. The file is excluded from Git.</small></div></div><div className="security-check"><ShieldCheck size={17}/><div><b>Read-only integrations</b><small>NetBox and Zabbix adapters only issue retrieval requests.</small></div></div><div className="security-check"><AlertCircle size={17}/><div><b>Not production-hardened</b><small>Authentication, RBAC, tenant isolation and audit controls remain on the roadmap.</small></div></div></div>
   </div>;
 }
@@ -495,3 +545,33 @@ const demoTopology: TopologyData = {
   unsupported_cable_count: 0, cable_count: demoLinks.length,
   returned_cable_count: demoLinks.length, has_more: false,
 };
+
+
+function monitoringLabel(node: TopologyNode, demo: boolean): string {
+  if (demo) return "SAMPLE";
+  if (node.monitoring_status === "ambiguous") return "AMBIGUOUS";
+  if (node.monitoring_status === "unmonitored") return "NO MATCH";
+  if (node.monitoring_status === "not_configured") return "NOT CONFIGURED";
+  if (node.monitoring_status === "unavailable") return "ZABBIX ERROR";
+  if (node.monitoring_status !== "matched") return "UNKNOWN";
+  switch (node.monitoring_availability) {
+    case "available": return "AVAILABLE";
+    case "partially_available": return "PARTIAL";
+    case "unavailable": return "UNAVAILABLE";
+    case "disabled": return "DISABLED";
+    default: return "UNKNOWN";
+  }
+}
+
+function monitoringClass(node: TopologyNode, demo: boolean): string {
+  if (demo) return "demo";
+  if (node.monitoring_status === "ambiguous") return "ambiguous";
+  if (node.monitoring_status === "unmonitored") return "unmonitored";
+  if (node.monitoring_status === "not_configured") return "not-configured";
+  if (node.monitoring_status === "unavailable") return "unknown";
+  if (node.monitoring_availability === "available") return "available";
+  if (node.monitoring_availability === "partially_available") return "partial";
+  if (node.monitoring_availability === "unavailable") return "unavailable";
+  if (node.monitoring_availability === "disabled") return "disabled";
+  return "unknown";
+}

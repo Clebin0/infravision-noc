@@ -69,3 +69,25 @@ Each graph node represents a NetBox device. Each edge represents a direct cable 
 The endpoint currently retrieves up to 500 cable records per request. The response includes `has_more` when NetBox reports additional records and `unsupported_cable_count` for cables whose ends are not both direct device interfaces. Cables terminating on patch panels, front ports, rear ports, or pass-through ports are not traced end-to-end yet; those relationships are deliberately excluded rather than guessed.
 
 If NetBox is not configured, the endpoint returns an empty `demo=true` graph. The frontend uses a clearly labeled fictional sample topology only in that demo mode. If NetBox is configured but has no direct device-interface links, the UI displays an empty live result instead of substituting sample data.
+
+
+## Zabbix host latest metrics
+
+- `GET /api/monitoring/hosts/{host_id}/metrics` — retrieves enabled, monitored Zabbix items for one host using `item.get`, including the latest value, units, item key, and last update timestamp.
+- Values are grouped into best-effort categories (CPU, memory, disk, network received, and network sent) using item keys and names. Items that do not match these known patterns remain available under the `other` category.
+- The endpoint does not invent data: an unconfigured Zabbix integration returns an empty result marked as demo mode. A configured host with no enabled monitored items returns an empty live result.
+- The inventory view fetches latest metrics only after the operator selects a uniquely correlated NetBox device. Ambiguous hostname/IP matches are shown for review; no telemetry is silently attached to an ambiguous asset.
+
+
+
+## Zabbix monitoring overlay on topology
+
+The combined endpoint is `GET /api/topology/monitoring`. It loads physical devices and direct interface-to-interface cable links from NetBox, then enriches each node with a Zabbix host match and current host availability.
+
+The Zabbix adapter requests host interfaces through `host.get`. Interface availability values are normalized as `0 = unknown`, `1 = available`, and `2 = unavailable`. A host with mixed available and unavailable interfaces is labeled partially available; disabled hosts remain disabled, and hosts without a usable availability signal remain unknown.
+
+Host association reuses the inventory correlation policy: exact device name against Zabbix technical/display hostname first, then normalized NetBox primary management IP against Zabbix interface IP. One-to-many and many-to-one matches are marked ambiguous; they do not receive a selected Zabbix host or an inferred health state.
+
+Active Zabbix triggers are loaded with `trigger.get` and grouped by host. The node inspector reports total active triggers and separates priorities 4–5 as critical and 2–3 as warnings. Trigger counts are only attached to a uniquely matched host.
+
+If Zabbix is not configured or the API is unavailable, NetBox physical topology remains visible and monitoring fields explicitly indicate not configured or unavailable. This is not demo telemetry. When NetBox itself is not configured, the endpoint returns an empty demo result and the frontend uses its clearly labeled fictional sample topology.

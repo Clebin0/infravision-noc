@@ -26,6 +26,7 @@ def endpoint(
                 "role": {"name": "Network"},
                 "site": {"name": site},
                 "status": {"value": "active", "label": "Active"},
+                "primary_ip4": {"address": f"192.0.2.{device_id}/24"},
             },
         },
     }
@@ -59,6 +60,7 @@ def test_normalizes_direct_device_interface_connection():
     assert payload["connection_count"] == 1
     assert payload["unsupported_cable_count"] == 0
     assert [node["name"] for node in payload["nodes"]] == ["core-sw-01", "dist-sw-01"]
+    assert payload["nodes"][0]["primary_ip"] == "192.0.2.1/24"
 
     link = payload["links"][0]
     assert link["cable_id"] == "17"

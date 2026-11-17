@@ -19,7 +19,8 @@
 ## Milestone 3 — Monitoring
 - [x] Zabbix JSON-RPC API client
 - [x] Host and active trigger retrieval endpoints
-- [ ] Item value normalization and history/trend retrieval
+- [x] Latest monitored item retrieval and best-effort CPU, memory, disk, and network categorization
+- [ ] Historical item values and trend retrieval
 - [ ] Incident lifecycle and severity mapping
 
 ## Milestone 4 — Visualization
@@ -30,7 +31,8 @@
 - [x] Rack drill-down to a device details panel
 - [x] Live topology nodes and direct interface-to-interface links from NetBox cable terminations
 - [ ] End-to-end tracing through patch panels and pass-through ports
-- [ ] Zabbix health overlays on topology nodes and links
+- [x] Zabbix host availability and active-problem overlays on topology nodes, with ambiguous matches kept unassigned
+- [ ] Per-interface telemetry and health overlays on topology links
 
 ## Milestone 5 — Production readiness
 - [ ] Authentication and RBAC

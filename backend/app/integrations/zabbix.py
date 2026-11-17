@@ -33,7 +33,6 @@ class ZabbixClient:
             payload = response.json()
 
         if payload.get("error"):
-            # Avoid returning request details or credentials to API consumers.
             message = payload["error"].get("message", "Zabbix API request failed")
             data = payload["error"].get("data", "")
             raise RuntimeError(f"{message}: {data}".strip(": "))
@@ -43,31 +42,68 @@ class ZabbixClient:
         if not self.configured:
             return {"configured": False, "reachable": False, "message": "URL or token not configured"}
         try:
-            await self._call("apiinfo.version", {})
-            return {"configured": True, "reachable": True, "message": "Zabbix API reachable"}
+            version = await self._call("apiinfo.version", {})
+            return {"configured": True, "reachable": True, "message": "Zabbix API reachable", "version": version}
         except (httpx.HTTPError, RuntimeError, ValueError):
             return {"configured": True, "reachable": False, "message": "Zabbix API unavailable or authentication failed"}
+
+    @staticmethod
+    def normalize_host(host: dict[str, Any]) -> dict[str, Any]:
+        availability_labels = {
+            "0": "unknown",
+            "1": "available",
+            "2": "unavailable",
+        }
+        interfaces = []
+        for interface in host.get("interfaces", []) or []:
+            raw_available = interface.get("available")
+            interfaces.append({
+                "interface_id": interface.get("interfaceid"),
+                "ip": interface.get("ip"),
+                "dns": interface.get("dns"),
+                "main": interface.get("main"),
+                "type": interface.get("type"),
+                "port": interface.get("port"),
+                "available": raw_available,
+                "availability": availability_labels.get(str(raw_available), "unknown"),
+                "error": interface.get("error") or "",
+            })
+
+        monitored_interfaces = [item for item in interfaces if item["availability"] != "unknown"]
+        has_available = any(item["availability"] == "available" for item in monitored_interfaces)
+        has_unavailable = any(item["availability"] == "unavailable" for item in monitored_interfaces)
+
+        if str(host.get("status", "0")) != "0":
+            availability = "disabled"
+        elif has_available and has_unavailable:
+            availability = "partially_available"
+        elif has_available:
+            availability = "available"
+        elif has_unavailable:
+            availability = "unavailable"
+        else:
+            availability = "unknown"
+
+        return {
+            "external_id": str(host.get("hostid") or ""),
+            "technical_name": host.get("host"),
+            "name": host.get("name"),
+            "status": "enabled" if str(host.get("status", "0")) == "0" else "disabled",
+            "availability": availability,
+            "interfaces": interfaces,
+            "source": "zabbix",
+        }
 
     async def get_hosts(self) -> list[dict[str, Any]]:
         result = await self._call(
             "host.get",
             {
                 "output": ["hostid", "host", "name", "status"],
-                "selectInterfaces": ["ip", "dns", "main", "type"],
+                "selectInterfaces": ["interfaceid", "ip", "dns", "main", "type", "port", "available", "error"],
                 "sortfield": "host",
             },
         )
-        return [
-            {
-                "external_id": host.get("hostid"),
-                "technical_name": host.get("host"),
-                "name": host.get("name"),
-                "status": "enabled" if host.get("status") == "0" else "disabled",
-                "interfaces": host.get("interfaces", []),
-                "source": "zabbix",
-            }
-            for host in result or []
-        ]
+        return [self.normalize_host(host) for host in result or []]
 
     async def get_active_triggers(self) -> list[dict[str, Any]]:
         result = await self._call(
@@ -82,7 +118,7 @@ class ZabbixClient:
         )
         return [
             {
-                "external_id": trigger.get("triggerid"),
+                "external_id": str(trigger.get("triggerid") or ""),
                 "title": trigger.get("description"),
                 "priority": trigger.get("priority"),
                 "last_change": trigger.get("lastchange"),
@@ -91,3 +127,72 @@ class ZabbixClient:
             }
             for trigger in result or []
         ]
+
+
+    @staticmethod
+    def normalize_item(item: dict[str, Any]) -> dict[str, Any]:
+        name = str(item.get("name") or "Unnamed item")
+        key = str(item.get("key_") or "")
+        normalized = f"{name} {key}".casefold()
+
+        if "system.cpu.util" in key.casefold() or "cpu utilization" in normalized or "cpu usage" in normalized:
+            category = "cpu"
+        elif "vm.memory.util" in key.casefold() or "memory utilization" in normalized or "memory usage" in normalized:
+            category = "memory"
+        elif "vfs.fs.size" in key.casefold() and ("pused" in key.casefold() or "utilization" in normalized):
+            category = "disk"
+        elif "net.if.in" in key.casefold() or ("interface" in normalized and ("received" in normalized or "incoming" in normalized)):
+            category = "network_in"
+        elif "net.if.out" in key.casefold() or ("interface" in normalized and ("sent" in normalized or "outgoing" in normalized)):
+            category = "network_out"
+        else:
+            category = "other"
+
+        raw_value = item.get("lastvalue")
+        try:
+            numeric_value = float(raw_value) if raw_value not in (None, "") else None
+        except (TypeError, ValueError):
+            numeric_value = None
+
+        return {
+            "item_id": str(item.get("itemid") or ""),
+            "name": name,
+            "key": key,
+            "category": category,
+            "value": str(raw_value) if raw_value is not None else None,
+            "numeric_value": numeric_value,
+            "units": item.get("units") or "",
+            "last_clock": int(item.get("lastclock") or 0),
+            "value_type": str(item.get("value_type") or ""),
+            "source": "zabbix",
+        }
+
+    async def get_latest_metrics(self, host_id: str, limit: int = 200) -> dict[str, Any]:
+        safe_limit = max(1, min(int(limit), 500))
+        result = await self._call(
+            "item.get",
+            {
+                "output": [
+                    "itemid", "name", "key_", "lastvalue",
+                    "lastclock", "units", "value_type",
+                ],
+                "hostids": [str(host_id)],
+                "monitored": True,
+                "filter": {"status": "0"},
+                "sortfield": "name",
+                "sortorder": "ASC",
+                "limit": safe_limit,
+            },
+        )
+        metrics = [self.normalize_item(item) for item in result or []]
+        summary = {
+            category: [item for item in metrics if item["category"] == category]
+            for category in ("cpu", "memory", "disk", "network_in", "network_out")
+        }
+        return {
+            "host_id": str(host_id),
+            "count": len(metrics),
+            "metrics": metrics,
+            "summary": summary,
+            "source": "zabbix",
+        }

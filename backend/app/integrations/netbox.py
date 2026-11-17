@@ -107,7 +107,7 @@ class NetBoxClient:
         """
         def display(value: Any) -> Any:
             if isinstance(value, dict):
-                return value.get("display") or value.get("name") or value.get("label") or value.get("value")
+                return value.get("display") or value.get("name") or value.get("label") or value.get("value") or value.get("address")
             return value
 
         def normalize_endpoint(termination: dict[str, Any]) -> dict[str, Any] | None:
@@ -116,6 +116,7 @@ class NetBoxClient:
 
             interface = termination.get("object") or {}
             device = interface.get("device") or {}
+            primary_ip = device.get("primary_ip4") or device.get("primary_ip")
             device_id = device.get("id")
             if not device_id:
                 return None
@@ -136,6 +137,7 @@ class NetBoxClient:
                 "role": display(device.get("role")),
                 "site": display(device.get("site")),
                 "device_status": display(device.get("status")),
+                "primary_ip": display(primary_ip),
             }
 
         nodes: dict[str, dict[str, Any]] = {}
@@ -185,6 +187,7 @@ class NetBoxClient:
                             "role": endpoint["role"],
                             "site": endpoint["site"],
                             "asset_status": endpoint["device_status"],
+                            "primary_ip": endpoint["primary_ip"],
                             "interfaces": {},
                         })
                         node["interfaces"][endpoint["interface_id"]] = {

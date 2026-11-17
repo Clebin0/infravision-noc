@@ -4,7 +4,7 @@
 
 InfraVision NOC is an open-source NOC platform that brings infrastructure inventory and operational monitoring into one workspace. It is designed to correlate NetBox assets with Zabbix telemetry and present operational context through Grafana and a dedicated web interface.
 
-> Current status: v0.7.0. NetBox and Zabbix read-only adapters are connected through a correlation service that matches devices by exact hostname first, then normalized management IP. Rack views read live rack records and device placement from NetBox. The topology view now reads direct device-interface cable connections from NetBox, with an explicit demo fallback when NetBox is not configured. Grafana provisions the Zabbix app, token-backed data source, and NOC dashboard. Patch-panel/pass-through cable path tracing and live Zabbix health overlays remain future work.
+> Current status: v0.8.0. NetBox supplies physical device/interface cable topology, while Zabbix overlays matched host availability and active trigger counts. Device matching uses exact hostname first, then normalized management IP; ambiguous matches are never assigned automatically. Inventory selection also retrieves the latest Zabbix item values for CPU, memory, disk, and network when matching items are present. If Zabbix is missing or unavailable, live NetBox topology remains visible with monitoring marked unknown or not configured. Grafana provisions the Zabbix app, token-backed data source, and NOC dashboard. Historical item trends, patch-panel/pass-through cable path tracing, and per-interface telemetry overlays remain future work.
 
 ## Platform architecture
 
@@ -21,8 +21,8 @@ InfraVision NOC is an open-source NOC platform that brings infrastructure invent
 - Executive NOC overview with availability and incident KPIs.
 - Device inventory correlated by exact hostname and normalized management IP, with ambiguous matches isolated for operator review.
 - Rack elevations with live NetBox rack selection, front/rear views, rack-unit placement, and a labeled demo fallback.
-- Device detail pages with CPU, memory, storage, network, and sensor telemetry.
-- Network topology built from NetBox direct interface-to-interface cable terminations, including a selectable cable inspector.
+- Selected inventory asset drill-down with the latest Zabbix CPU, memory, disk, and network item values; historical graphs remain in Grafana.
+- Network topology built from NetBox direct interface-to-interface cable terminations, including a selectable cable inspector and Zabbix host-availability/active-trigger overlays.
 - Incident triage with severity, acknowledgement, and tenant filters.
 - Multi-tenant inventory boundaries.
 - Audit history and integration synchronization status.
@@ -99,9 +99,10 @@ npm run dev
 - [x] Live NetBox rack listing, device assignment, and rack-unit placement
 - [x] Live topology nodes and direct interface-to-interface links from NetBox cable records
 - [ ] End-to-end path tracing through patch panels and pass-through ports
-- [ ] Zabbix health overlays for topology nodes and interface links
+- [x] Zabbix host availability and active-trigger overlays on topology nodes, with ambiguous matches kept unassigned
+- [ ] Per-interface telemetry/health overlays on topology links
 - [ ] Tenant-aware access control
-- [x] API, inventory, rack normalization, integration, correlation, topology, and Grafana provisioning tests (33 tests passing)
+- [x] API, inventory, rack normalization, integration, correlation, topology, Zabbix monitoring overlay, and Grafana provisioning tests (41 tests passing)
 
 ## License
 

@@ -36,3 +36,49 @@ def test_zabbix_endpoint_is_normalized():
 def test_unconfigured_integrations_are_detected():
     assert NetBoxClient(None, None).configured is False
     assert ZabbixClient(None, None).configured is False
+
+
+def test_zabbix_host_normalization_exposes_interface_availability():
+    host = ZabbixClient.normalize_host({
+        "hostid": "10084",
+        "host": "core-sw-01",
+        "name": "Core switch 01",
+        "status": "0",
+        "interfaces": [
+            {"interfaceid": "201", "ip": "192.0.2.10", "main": "1", "available": "1"},
+            {"interfaceid": "202", "ip": "192.0.2.11", "main": "0", "available": "2"},
+        ],
+    })
+    assert host["availability"] == "partially_available"
+    assert host["interfaces"][0]["availability"] == "available"
+    assert host["interfaces"][1]["availability"] == "unavailable"
+
+
+def test_zabbix_disabled_host_is_not_reported_as_available():
+    host = ZabbixClient.normalize_host({
+        "hostid": "10085",
+        "host": "retired-host",
+        "name": "Retired host",
+        "status": "1",
+        "interfaces": [{"interfaceid": "301", "ip": "192.0.2.20", "main": "1", "available": "1"}],
+    })
+    assert host["status"] == "disabled"
+    assert host["availability"] == "disabled"
+
+
+def test_zabbix_metric_normalization_classifies_cpu_memory_disk_and_network():
+    fixtures = [
+        {"itemid": "1", "name": "CPU utilization", "key_": "system.cpu.util", "lastvalue": "12.5", "lastclock": "1730000000", "units": "%"},
+        {"itemid": "2", "name": "Memory utilization", "key_": "vm.memory.util", "lastvalue": "68", "units": "%"},
+        {"itemid": "3", "name": "Root filesystem usage", "key_": "vfs.fs.size[/,pused]", "lastvalue": "81.2", "units": "%"},
+        {"itemid": "4", "name": "Interface eth0: Bits received", "key_": "net.if.in[eth0]", "lastvalue": "1200", "units": "bps"},
+        {"itemid": "5", "name": "Interface eth0: Bits sent", "key_": "net.if.out[eth0]", "lastvalue": "800", "units": "bps"},
+    ]
+
+    metrics = [ZabbixClient.normalize_item(item) for item in fixtures]
+    assert [item["category"] for item in metrics] == [
+        "cpu", "memory", "disk", "network_in", "network_out"
+    ]
+    assert metrics[0]["numeric_value"] == 12.5
+    assert metrics[0]["last_clock"] == 1730000000
+    assert metrics[0]["units"] == "%"

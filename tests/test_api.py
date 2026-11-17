@@ -83,3 +83,184 @@ def test_topology_endpoint_returns_empty_demo_graph_when_netbox_is_unconfigured(
     assert payload["links"] == []
     assert payload["connection_count"] == 0
     assert payload["unsupported_cable_count"] == 0
+
+
+def test_topology_monitoring_keeps_live_netbox_data_when_zabbix_is_not_configured(monkeypatch):
+    from app.api import routes
+
+    class FakeNetBox:
+        configured = True
+
+        async def get_topology(self, limit=500):
+            return {
+                "nodes": [{
+                    "id": "1", "name": "core-sw-01", "primary_ip": "192.0.2.10/24",
+                    "interfaces": [], "interface_count": 0, "site": "Curitiba",
+                }],
+                "links": [], "connection_count": 0, "device_count": 1,
+                "unsupported_cable_count": 0, "cable_count": 0,
+                "returned_cable_count": 0, "has_more": False,
+            }
+
+    class FakeZabbix:
+        configured = False
+
+    monkeypatch.setattr(routes, "netbox", FakeNetBox())
+    monkeypatch.setattr(routes, "zabbix", FakeZabbix())
+
+    response = client.get("/api/topology/monitoring")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["source"] == "netbox"
+    assert payload["demo"] is False
+    assert payload["monitoring_source"] == "not_configured"
+    assert payload["nodes"][0]["monitoring_status"] == "not_configured"
+
+
+def test_topology_monitoring_enriches_nodes_with_zabbix_availability_and_triggers(monkeypatch):
+    from app.api import routes
+
+    class FakeNetBox:
+        configured = True
+
+        async def get_topology(self, limit=500):
+            return {
+                "nodes": [{
+                    "id": "1", "name": "core-sw-01", "primary_ip": "192.0.2.10/24",
+                    "interfaces": [], "interface_count": 0, "site": "Curitiba",
+                }],
+                "links": [], "connection_count": 0, "device_count": 1,
+                "unsupported_cable_count": 0, "cable_count": 0,
+                "returned_cable_count": 0, "has_more": False,
+            }
+
+    class FakeZabbix:
+        configured = True
+
+        async def get_hosts(self):
+            return [{
+                "external_id": "1001", "technical_name": "CORE-SW-01",
+                "name": "Core switch 01", "status": "enabled",
+                "availability": "available",
+                "interfaces": [{"ip": "192.0.2.10", "available": "1", "availability": "available"}],
+            }]
+
+        async def get_active_triggers(self):
+            return [
+                {
+                    "external_id": "9001", "title": "High CPU",
+                    "priority": "4", "hosts": [{"hostid": "1001", "host": "CORE-SW-01"}],
+                },
+                {
+                    "external_id": "9002", "title": "Packet errors",
+                    "priority": "3", "hosts": [{"hostid": "1001", "host": "CORE-SW-01"}],
+                },
+            ]
+
+    monkeypatch.setattr(routes, "netbox", FakeNetBox())
+    monkeypatch.setattr(routes, "zabbix", FakeZabbix())
+
+    response = client.get("/api/topology/monitoring")
+    assert response.status_code == 200
+    payload = response.json()
+    node = payload["nodes"][0]
+    assert payload["source"] == "netbox+zabbix"
+    assert payload["monitoring_source"] == "zabbix"
+    assert payload["matched_count"] == 1
+    assert node["monitoring_status"] == "matched"
+    assert node["monitoring_availability"] == "available"
+    assert node["active_trigger_count"] == 2
+    assert node["critical_trigger_count"] == 1
+    assert node["warning_trigger_count"] == 1
+    assert payload["active_trigger_count"] == 2
+
+
+def test_host_metrics_endpoint_returns_empty_demo_result_when_zabbix_is_unconfigured():
+    response = client.get("/api/monitoring/hosts/1001/metrics")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["demo"] is True
+    assert payload["host_id"] == "1001"
+    assert payload["count"] == 0
+    assert payload["metrics"] == []
+    assert payload["summary"]["cpu"] == []
+
+
+def test_topology_monitoring_preserves_live_netbox_graph_when_zabbix_is_unreachable(monkeypatch):
+    from app.api import routes
+
+    class FakeNetBox:
+        configured = True
+
+        async def get_topology(self, limit=500):
+            return {
+                "nodes": [{
+                    "id": "1", "name": "core-sw-01", "primary_ip": "192.0.2.10/24",
+                    "interfaces": [], "interface_count": 0, "site": "Curitiba",
+                }],
+                "links": [], "connection_count": 0, "device_count": 1,
+                "unsupported_cable_count": 0, "cable_count": 0,
+                "returned_cable_count": 0, "has_more": False,
+            }
+
+    class FakeZabbix:
+        configured = True
+
+        async def get_hosts(self):
+            raise RuntimeError("Zabbix token rejected")
+
+        async def get_active_triggers(self):
+            raise RuntimeError("Zabbix token rejected")
+
+    monkeypatch.setattr(routes, "netbox", FakeNetBox())
+    monkeypatch.setattr(routes, "zabbix", FakeZabbix())
+
+    response = client.get("/api/topology/monitoring")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["source"] == "netbox"
+    assert payload["demo"] is False
+    assert payload["monitoring_source"] == "unavailable"
+    assert payload["nodes"][0]["monitoring_status"] == "unavailable"
+    assert payload["device_count"] == 1
+
+
+def test_topology_monitoring_does_not_assign_ambiguous_zabbix_hosts(monkeypatch):
+    from app.api import routes
+
+    class FakeNetBox:
+        configured = True
+
+        async def get_topology(self, limit=500):
+            return {
+                "nodes": [{
+                    "id": "1", "name": "core-sw-01", "primary_ip": "192.0.2.10/24",
+                    "interfaces": [], "interface_count": 0, "site": "Curitiba",
+                }],
+                "links": [], "connection_count": 0, "device_count": 1,
+                "unsupported_cable_count": 0, "cable_count": 0,
+                "returned_cable_count": 0, "has_more": False,
+            }
+
+    class FakeZabbix:
+        configured = True
+
+        async def get_hosts(self):
+            return [
+                {"external_id": "1001", "technical_name": "core-sw-01", "name": "Core 01", "status": "enabled", "availability": "available", "interfaces": []},
+                {"external_id": "1002", "technical_name": "CORE-SW-01", "name": "Core 01 duplicate", "status": "enabled", "availability": "unavailable", "interfaces": []},
+            ]
+
+        async def get_active_triggers(self):
+            return []
+
+    monkeypatch.setattr(routes, "netbox", FakeNetBox())
+    monkeypatch.setattr(routes, "zabbix", FakeZabbix())
+
+    response = client.get("/api/topology/monitoring")
+    assert response.status_code == 200
+    node = response.json()["nodes"][0]
+    assert node["monitoring_status"] == "ambiguous"
+    assert node["monitoring_availability"] == "unknown"
+    assert node["zabbix_host"] is None
+    assert len(node["zabbix_candidates"]) == 2
