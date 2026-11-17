@@ -13,8 +13,8 @@
 - [ ] Sites, tenants, interfaces, and richer inventory synchronization
 - [x] Device identity correlation by exact hostname and normalized management IP
 - [x] Ambiguous matches surfaced for operator review
-- [x] Demonstration rack front/rear elevation and device detail panel
-- [ ] Live NetBox rack placement and rack-unit mapping
+- [x] Rack front/rear elevation, device detail panel, and NetBox live inventory fallback
+- [x] Live NetBox rack listing, device assignment, and rack-unit placement (unknown device height falls back to 1U)
 
 ## Milestone 3 — Monitoring
 - [x] Zabbix JSON-RPC API client

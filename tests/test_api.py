@@ -55,3 +55,19 @@ def test_correlation_requires_both_providers_and_does_not_fake_live_matches():
     assert payload["source"] == "demo"
     assert payload["results"] == []
     assert payload["matched_count"] == 0
+
+
+def test_rack_inventory_endpoint_returns_empty_demo_result_when_unconfigured():
+    response = client.get("/api/inventory/racks")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["demo"] is True
+    assert payload["results"] == []
+
+
+def test_rack_devices_endpoint_returns_empty_demo_result_when_unconfigured():
+    response = client.get("/api/inventory/racks/7/devices")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["demo"] is True
+    assert payload["results"] == []

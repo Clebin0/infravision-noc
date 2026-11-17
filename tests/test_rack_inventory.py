@@ -30,3 +30,12 @@ def test_netbox_device_normalization_exposes_rack_identifier():
     })
     assert device["rack_id"] == 7
     assert device["rack"] == "RACK-A01"
+
+
+def test_netbox_device_normalization_includes_device_type_height():
+    device = NetBoxClient.normalize_device({
+        "id": 18,
+        "name": "compute-02",
+        "device_type": {"model": "R750", "display": "PowerEdge R750", "u_height": 2},
+    })
+    assert device["device_height"] == 2
