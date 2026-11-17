@@ -23,8 +23,9 @@
 - [ ] Incident lifecycle and severity mapping
 
 ## Milestone 4 — Visualization
-- [ ] Grafana provisioning
-- [ ] Device telemetry panels
+- [x] Grafana Zabbix app installation and enablement provisioning
+- [x] Token-backed Zabbix data source provisioning
+- [x] Device telemetry panels for CPU, memory and network traffic, plus problem queue
 - [x] Demonstration network topology page
 - [x] Rack drill-down to a device details panel
 - [ ] Live topology links from NetBox interfaces and cables

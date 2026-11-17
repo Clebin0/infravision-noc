@@ -4,7 +4,7 @@
 
 InfraVision NOC is an open-source NOC platform that brings infrastructure inventory and operational monitoring into one workspace. It is designed to correlate NetBox assets with Zabbix telemetry and present operational context through Grafana and a dedicated web interface.
 
-> Current status: v0.5.0. NetBox and Zabbix read-only adapters are connected through a correlation service that matches devices by exact hostname first, then normalized management IP. Ambiguous matches are reported for operator review. Rack views now read live rack records and device placement from NetBox when configured; otherwise, they use clearly labeled fictional sample data. The network topology remains a demonstration until live interface and cable relationships are synchronized.
+> Current status: v0.6.0. NetBox and Zabbix read-only adapters are connected through a correlation service that matches devices by exact hostname first, then normalized management IP. Rack views read live rack records and device placement from NetBox when configured. Grafana now provisions the Zabbix app, token-backed data source, and a reusable NOC dashboard with host-group and host filters. Live Grafana telemetry requires the Zabbix API endpoint and a read-only token in `.env`; the network topology remains a demonstration until interface and cable relationships are synchronized.
 
 ## Platform architecture
 
@@ -33,7 +33,7 @@ InfraVision NOC is an open-source NOC platform that brings infrastructure invent
 backend/          FastAPI application and integration adapters
 frontend/         React + TypeScript dashboard
 infrastructure/   Docker and database configuration
-dashboards/       Grafana dashboard provisioning
+grafana/          Grafana provisioning and NOC dashboards
 docs/             Architecture and implementation notes
 tests/            Automated tests
 docker-compose.yml
@@ -55,7 +55,7 @@ Requirements: Docker Desktop with the Linux engine running, Docker Compose v2, a
    - API docs: http://localhost:8000/docs
    - Grafana: http://localhost:3000
 
-NetBox and Zabbix are connected as external services through read-only API adapters. Configure `NETBOX_URL`, `NETBOX_TOKEN`, `ZABBIX_URL`, and `ZABBIX_TOKEN` in `.env`. API integration endpoints are documented in [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md). Do not expose these development services directly to the public internet.
+NetBox and Zabbix are connected as external services through read-only API adapters. Configure `NETBOX_URL`, `NETBOX_TOKEN`, `ZABBIX_URL`, and `ZABBIX_TOKEN` in `.env`. For Grafana, also configure `ZABBIX_GRAFANA_URL` with the full `api_jsonrpc.php` endpoint and `ZABBIX_GRAFANA_TOKEN`. Grafana installs and enables the Zabbix app and provisions the dashboard automatically. API and connector details are documented in [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md). Do not expose these development services directly to the public internet.
 
 ## Development
 
@@ -91,13 +91,15 @@ npm run dev
 - [x] NetBox read-only API adapter and normalized device inventory endpoint
 - [x] Zabbix JSON-RPC adapter for hosts and active triggers
 - [x] NetBox-to-Zabbix device correlation endpoint (hostname/IP matching, ambiguity reporting)
-- [ ] Grafana provisioning and embedded dashboard links
+- [x] Grafana Zabbix app installation and enablement through provisioning
+- [x] Token-backed Zabbix data source provisioning
+- [x] NOC Grafana dashboard with group/host variables, problems, CPU, memory, and network panels
 - [x] Demonstration rack elevation with front/rear selection and device drill-down
 - [x] Demonstration network topology and incident center screens
 - [x] Live NetBox rack listing, device assignment, and rack-unit placement
 - [ ] Live topology relationships from NetBox interfaces and cables
 - [ ] Tenant-aware access control
-- [x] API, inventory, rack normalization, integration, and correlation tests (23 tests passing)
+- [x] API, inventory, rack normalization, integration, correlation, and Grafana provisioning tests (28 tests passing)
 
 ## License
 

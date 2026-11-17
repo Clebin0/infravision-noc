@@ -56,11 +56,15 @@ services:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-change-me-local}
       GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_PLUGINS_PREINSTALL: alexanderzobnin-zabbix-app
+      ZABBIX_GRAFANA_URL: ${ZABBIX_GRAFANA_URL:-}
+      ZABBIX_GRAFANA_TOKEN: ${ZABBIX_GRAFANA_TOKEN:-}
     ports:
       - "3000:3000"
     volumes:
       - grafana_data:/var/lib/grafana
-      - ./dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
     networks: [infravision]
 
 volumes:
