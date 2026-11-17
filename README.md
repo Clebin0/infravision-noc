@@ -94,9 +94,10 @@ npm run dev
 - [ ] Grafana provisioning and embedded dashboard links
 - [x] Demonstration rack elevation with front/rear selection and device drill-down
 - [x] Demonstration network topology and incident center screens
-- [ ] Live rack placement and topology relationships from NetBox
+- [x] Live NetBox rack listing, device assignment, and rack-unit placement
+- [ ] Live topology relationships from NetBox interfaces and cables
 - [ ] Tenant-aware access control
-- [x] API, inventory, rack normalization, integration, and correlation tests (20 tests passing)
+- [x] API, inventory, rack normalization, integration, and correlation tests (23 tests passing)
 
 ## License
 
