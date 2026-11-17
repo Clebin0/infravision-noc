@@ -9,6 +9,8 @@ import {
 type Device = { id: string; name: string; type: string; site: string; status: string; cpu: number; memory: number; ip: string };
 type Incident = { id: string; severity: string; title: string; device: string; age: string };
 type Overview = { demo: boolean; kpis: { availability: number; devices_total: number; devices_online: number; active_incidents: number; sites: number }; devices: Device[]; incidents: Incident[] };
+type ProviderStatus = { configured: boolean; reachable: boolean; message: string };
+type IntegrationStatus = { netbox: ProviderStatus; zabbix: ProviderStatus; demo_mode: boolean };
 
 const fallback: Overview = {
   demo: true,
@@ -39,6 +41,7 @@ function App() {
   const [active, setActive] = useState("Overview");
   const [query, setQuery] = useState("");
   const [apiState, setApiState] = useState("connecting");
+  const [integrations, setIntegrations] = useState<IntegrationStatus | null>(null);
 
   useEffect(() => {
     const api = import.meta.env.VITE_API_URL || "http://localhost:8000";
@@ -46,6 +49,10 @@ function App() {
       .then((response) => { if (!response.ok) throw new Error("API unavailable"); return response.json(); })
       .then((payload: Overview) => { setData(payload); setApiState("connected"); })
       .catch(() => setApiState("demo"));
+    fetch(`${api}/api/integrations/status`)
+      .then((response) => { if (!response.ok) throw new Error("Integration status unavailable"); return response.json(); })
+      .then((payload: IntegrationStatus) => setIntegrations(payload))
+      .catch(() => setIntegrations(null));
   }, []);
 
   const filteredDevices = useMemo(
@@ -88,9 +95,9 @@ function App() {
           <section className="panel devices-panel"><div className="panel-header"><div><h2>Monitored devices</h2><p>Latest device status from your infrastructure</p></div><div className="table-actions"><label className="search-box"><Search size={15}/><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search devices..." /></label><button className="outline-button compact"><SlidersHorizontal size={14}/> Filter</button><button className="text-button">View inventory <ArrowUpRight size={14}/></button></div></div><div className="table-scroll"><table><thead><tr><th>DEVICE</th><th>TYPE</th><th>LOCATION</th><th>IP ADDRESS</th><th>CPU</th><th>MEMORY</th><th>STATUS</th></tr></thead><tbody>{filteredDevices.map((device) => <tr key={device.id}><td><div className="device-name"><div className="device-icon"><Server size={16}/></div><b>{device.name}</b></div></td><td>{device.type}</td><td>{device.site}</td><td className="mono">{device.ip}</td><td><Metric value={device.cpu}/></td><td><Metric value={device.memory}/></td><td><Status status={device.status}/></td></tr>)}</tbody></table>{filteredDevices.length === 0 && <div className="empty-state">No devices match your search.</div>}</div><div className="table-footer">Showing {filteredDevices.length} of {data.kpis.devices_total} devices <button>Open inventory <ArrowUpRight size={13}/></button></div></section>
 
           <section className="bottom-grid"><div className="panel incidents-panel"><div className="panel-header"><div><h2>Recent incidents</h2><p>Events requiring operator attention</p></div><button className="text-button">Incident center <ArrowUpRight size={14}/></button></div><div className="incident-list">{data.incidents.map((incident) => <div className="incident-row" key={incident.id}><div className={`severity-icon ${incident.severity}`}><AlertCircle size={16}/></div><div className="incident-main"><b>{incident.title}</b><small>{incident.id} <span>•</span> {incident.device}</small></div><span className={`severity-pill ${incident.severity}`}>{incident.severity}</span><small className="incident-age">{incident.age} ago</small></div>)}</div></div>
-          <div className="panel integrations-panel"><div className="panel-header"><div><h2>Platform integrations</h2><p>Connected infrastructure services</p></div><button className="more-button">•••</button></div><Integration icon={<Boxes size={18}/>} name="NetBox" desc="Inventory & IPAM" state="Pending setup"/><Integration icon={<Activity size={18}/>} name="Zabbix" desc="Monitoring & alerting" state="Pending setup"/><Integration icon={<Gauge size={18}/>} name="Grafana" desc="Metrics visualization" state="Local service"/></div></section>
+          <div className="panel integrations-panel"><div className="panel-header"><div><h2>Platform integrations</h2><p>Connected infrastructure services</p></div><button className="more-button">•••</button></div><Integration icon={<Boxes size={18}/>} name="NetBox" desc="Inventory & IPAM" state={providerLabel(integrations?.netbox)}/><Integration icon={<Activity size={18}/>} name="Zabbix" desc="Monitoring & alerting" state={providerLabel(integrations?.zabbix)}/><Integration icon={<Gauge size={18}/>} name="Grafana" desc="Metrics visualization" state="Local service"/></div></section>
 
-          <footer><span>InfraVision NOC <b>v0.1.0</b></span><span><span className="pulse"/> All systems nominal <span className="footer-sep">•</span> Built for modern NOC teams</span></footer>
+          <footer><span>InfraVision NOC <b>v0.2.0</b></span><span><span className="pulse"/> All systems nominal <span className="footer-sep">•</span> Built for modern NOC teams</span></footer>
         </div>
       </main>
     </div>
@@ -104,6 +111,7 @@ function Legend({ color, label, value }: { color: string; label: string; value: 
 function Site({ name, city, count, percent }: { name: string; city: string; count: string; percent: number }) { return <div className="site-row"><div className="site-pin"><Map size={15}/></div><div className="site-info"><b>{name}</b><small>{city}</small></div><div className="site-devices"><b>{count}</b><div className="site-bar"><i style={{width:`${percent}%`}}/></div></div></div>; }
 function Metric({ value }: { value: number }) { return <div className="metric"><span>{value}%</span><div><i style={{width:`${value}%`}}/></div></div>; }
 function Status({ status }: { status: string }) { return <span className={`status-badge ${status}`}><i/>{status}</span>; }
-function Integration({ icon, name, desc, state }: { icon: React.ReactNode; name: string; desc: string; state: string }) { return <div className="integration-row"><div className="integration-icon">{icon}</div><div className="integration-info"><b>{name}</b><small>{desc}</small></div><span className="integration-state"><i/>{state}</span></div>; }
+function providerLabel(provider?: ProviderStatus) { if (!provider) return "API unavailable"; if (!provider.configured) return "Not configured"; return provider.reachable ? "Connected" : "Unreachable"; }
+function Integration({ icon, name, desc, state }: { icon: React.ReactNode; name: string; desc: string; state: string }) { const connected = state === "Connected" || state === "Local service"; return <div className="integration-row"><div className="integration-icon">{icon}</div><div className="integration-info"><b>{name}</b><small>{desc}</small></div><span className={connected ? "integration-state connected" : "integration-state"}><i/>{state}</span></div>; }
 
 export default App;

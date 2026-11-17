@@ -1,20 +1,15 @@
 from datetime import datetime, timezone
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.api.routes import router as integration_router
+from app.settings import settings
 
-class Settings(BaseSettings):
-    app_env: str = "development"
-    cors_origins: str = "http://localhost:5173"
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
-
-
-settings = Settings()
 app = FastAPI(
     title="InfraVision NOC API",
     description="Infrastructure inventory and observability correlation API.",
-    version="0.1.0",
+    version="0.2.0",
 )
 
 app.add_middleware(
@@ -24,6 +19,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(integration_router)
 
 
 @app.get("/api/health", tags=["system"])

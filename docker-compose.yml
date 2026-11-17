@@ -20,11 +20,16 @@ services:
     build: ./backend
     container_name: infravision-api
     restart: unless-stopped
+    env_file:
+      - .env
     environment:
       APP_ENV: ${APP_ENV:-development}
       APP_SECRET_KEY: ${APP_SECRET_KEY:-local-only-change-me}
-      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://infravision:change-me-local@postgres:5432/infravision}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+      NETBOX_URL: ${NETBOX_URL:-}
+      NETBOX_TOKEN: ${NETBOX_TOKEN:-}
+      ZABBIX_URL: ${ZABBIX_URL:-}
+      ZABBIX_TOKEN: ${ZABBIX_TOKEN:-}
     ports:
       - "8000:8000"
     depends_on:

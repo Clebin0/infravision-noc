@@ -4,7 +4,7 @@
 
 InfraVision NOC is an open-source NOC platform that brings infrastructure inventory and operational monitoring into one workspace. It is designed to correlate NetBox assets with Zabbix telemetry and present operational context through Grafana and a dedicated web interface.
 
-> Current status: foundation scaffold. The dashboard currently uses clearly labeled demonstration data while service integrations are implemented incrementally.
+> Current status: v0.2.0. The FastAPI adapters for NetBox and Zabbix are implemented. Connect read-only API credentials in `.env` to retrieve live inventory and monitoring data. The initial overview still contains clearly labeled fictional demonstration metrics.
 
 ## Platform architecture
 
@@ -55,7 +55,7 @@ Requirements: Docker Desktop with the Linux engine running, Docker Compose v2, a
    - API docs: http://localhost:8000/docs
    - Grafana: http://localhost:3000
 
-The initial compose profile starts the application foundation. NetBox and Zabbix services will be added with their dedicated configuration in the integration milestone. Do not expose these development services directly to the public internet.
+NetBox and Zabbix are connected as external services through read-only API adapters. Configure `NETBOX_URL`, `NETBOX_TOKEN`, `ZABBIX_URL`, and `ZABBIX_TOKEN` in `.env`. API integration endpoints are documented in [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md). Do not expose these development services directly to the public internet.
 
 ## Development
 
@@ -88,8 +88,8 @@ npm run dev
 
 - [x] Project structure and initial NOC dashboard foundation
 - [x] FastAPI health and demonstration endpoints
-- [ ] NetBox API adapter and inventory synchronization
-- [ ] Zabbix API adapter and host/trigger correlation
+- [x] NetBox read-only API adapter and normalized device inventory endpoint
+- [x] Zabbix JSON-RPC adapter for hosts and active triggers
 - [ ] Grafana provisioning and embedded dashboard links
 - [ ] Rack elevation and network topology views
 - [ ] Tenant-aware access control

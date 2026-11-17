@@ -8,15 +8,16 @@
 - [ ] Local build verification
 
 ## Milestone 2 — Inventory
-- [ ] NetBox configuration and API client
-- [ ] Sites, tenants, racks, devices, interfaces
-- [ ] Device identity mapping
+- [x] NetBox configuration and read-only API client
+- [x] Initial device normalization and inventory endpoint
+- [ ] Sites, tenants, interfaces, and richer inventory synchronization
+- [ ] Device identity mapping and Zabbix host correlation
 - [ ] Rack front/rear elevation
 
 ## Milestone 3 — Monitoring
-- [ ] Zabbix API client
-- [ ] Host and trigger synchronization
-- [ ] Item value normalization
+- [x] Zabbix JSON-RPC API client
+- [x] Host and active trigger retrieval endpoints
+- [ ] Item value normalization and history/trend retrieval
 - [ ] Incident lifecycle and severity mapping
 
 ## Milestone 4 — Visualization
