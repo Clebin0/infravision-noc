@@ -1,0 +1,67 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: infravision-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-infravision}
+      POSTGRES_USER: ${POSTGRES_USER:-infravision}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-local}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-infravision} -d ${POSTGRES_DB:-infravision}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [infravision]
+
+  backend:
+    build: ./backend
+    container_name: infravision-api
+    restart: unless-stopped
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      APP_SECRET_KEY: ${APP_SECRET_KEY:-local-only-change-me}
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://infravision:change-me-local@postgres:5432/infravision}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [infravision]
+
+  frontend:
+    build: ./frontend
+    container_name: infravision-web
+    restart: unless-stopped
+    environment:
+      VITE_API_URL: ${VITE_API_URL:-http://localhost:8000}
+    ports:
+      - "5173:5173"
+    depends_on: [backend]
+    networks: [infravision]
+
+  grafana:
+    image: grafana/grafana:11.6.0
+    container_name: infravision-grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-change-me-local}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./dashboards:/etc/grafana/provisioning/dashboards:ro
+    networks: [infravision]
+
+volumes:
+  postgres_data:
+  grafana_data:
+
+networks:
+  infravision:
+    name: infravision-network
