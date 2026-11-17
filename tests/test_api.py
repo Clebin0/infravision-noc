@@ -264,3 +264,55 @@ def test_topology_monitoring_does_not_assign_ambiguous_zabbix_hosts(monkeypatch)
     assert node["monitoring_availability"] == "unknown"
     assert node["zabbix_host"] is None
     assert len(node["zabbix_candidates"]) == 2
+
+
+def test_host_metrics_endpoint_returns_latest_zabbix_items_for_a_configured_host(monkeypatch):
+    from app.api import routes
+
+    class FakeZabbix:
+        configured = True
+
+        async def get_latest_metrics(self, host_id, limit=200):
+            return {
+                "host_id": str(host_id),
+                "count": 1,
+                "metrics": [{
+                    "item_id": "501",
+                    "name": "CPU utilization",
+                    "key": "system.cpu.util",
+                    "category": "cpu",
+                    "value": "21.5",
+                    "numeric_value": 21.5,
+                    "units": "%",
+                    "last_clock": 1730000000,
+                    "value_type": "0",
+                    "source": "zabbix",
+                }],
+                "summary": {"cpu": [{"item_id": "501", "value": "21.5", "units": "%"}], "memory": [], "disk": [], "network_in": [], "network_out": []},
+                "source": "zabbix",
+            }
+
+    monkeypatch.setattr(routes, "zabbix", FakeZabbix())
+    response = client.get("/api/monitoring/hosts/1001/metrics")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["demo"] is False
+    assert payload["host_id"] == "1001"
+    assert payload["count"] == 1
+    assert payload["metrics"][0]["category"] == "cpu"
+    assert payload["metrics"][0]["numeric_value"] == 21.5
+
+
+def test_host_metrics_endpoint_reports_upstream_failure_without_fake_values(monkeypatch):
+    from app.api import routes
+
+    class FakeZabbix:
+        configured = True
+
+        async def get_latest_metrics(self, host_id, limit=200):
+            raise RuntimeError("Zabbix API unavailable")
+
+    monkeypatch.setattr(routes, "zabbix", FakeZabbix())
+    response = client.get("/api/monitoring/hosts/1001/metrics")
+    assert response.status_code == 502
+    assert response.json()["detail"] == "Zabbix host metrics query failed"

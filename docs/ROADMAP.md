@@ -32,6 +32,7 @@
 - [x] Live topology nodes and direct interface-to-interface links from NetBox cable terminations
 - [ ] End-to-end tracing through patch panels and pass-through ports
 - [x] Zabbix host availability and active-problem overlays on topology nodes, with ambiguous matches kept unassigned
+- [x] Latest host-level CPU, memory, disk, and network metrics in the selected topology node inspector
 - [ ] Per-interface telemetry and health overlays on topology links
 
 ## Milestone 5 — Production readiness

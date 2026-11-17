@@ -76,7 +76,7 @@ If NetBox is not configured, the endpoint returns an empty `demo=true` graph. Th
 - `GET /api/monitoring/hosts/{host_id}/metrics` — retrieves enabled, monitored Zabbix items for one host using `item.get`, including the latest value, units, item key, and last update timestamp.
 - Values are grouped into best-effort categories (CPU, memory, disk, network received, and network sent) using item keys and names. Items that do not match these known patterns remain available under the `other` category.
 - The endpoint does not invent data: an unconfigured Zabbix integration returns an empty result marked as demo mode. A configured host with no enabled monitored items returns an empty live result.
-- The inventory view fetches latest metrics only after the operator selects a uniquely correlated NetBox device. Ambiguous hostname/IP matches are shown for review; no telemetry is silently attached to an ambiguous asset.
+- The inventory view and topology node inspector fetch latest metrics only after an operator selects a uniquely correlated NetBox device. Ambiguous hostname/IP matches are shown for review; no telemetry is silently attached to an ambiguous asset. The topology inspector displays one representative item for each category (CPU, memory, disk, network received, and network sent) plus a short list of the latest returned items. Values are point-in-time last values, not historical graphs.
 
 
 

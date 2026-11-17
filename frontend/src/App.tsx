@@ -119,7 +119,7 @@ function App() {
           <section className="bottom-grid"><div className="panel incidents-panel"><div className="panel-header"><div><h2>Recent incidents</h2><p>Events requiring operator attention</p></div><button className="text-button">Incident center <ArrowUpRight size={14}/></button></div><div className="incident-list">{data.incidents.map((incident) => <div className="incident-row" key={incident.id}><div className={`severity-icon ${incident.severity}`}><AlertCircle size={16}/></div><div className="incident-main"><b>{incident.title}</b><small>{incident.id} <span>•</span> {incident.device}</small></div><span className={`severity-pill ${incident.severity}`}>{incident.severity}</span><small className="incident-age">{incident.age} ago</small></div>)}</div></div>
           <div className="panel integrations-panel"><div className="panel-header"><div><h2>Platform integrations</h2><p>Connected infrastructure services</p></div><button className="more-button">•••</button></div><Integration icon={<Boxes size={18}/>} name="NetBox" desc="Inventory & IPAM" state={providerLabel(integrations?.netbox)}/><Integration icon={<Activity size={18}/>} name="Zabbix" desc="Monitoring & alerting" state={providerLabel(integrations?.zabbix)}/><Integration icon={<Gauge size={18}/>} name="Grafana" desc="Metrics visualization" state="Local service"/></div></section>
 
-          <footer><span>InfraVision NOC <b>v0.8.0</b></span><span><span className="pulse"/> All systems nominal <span className="footer-sep">•</span> Built for modern NOC teams</span></footer>
+          <footer><span>InfraVision NOC <b>v0.9.0</b></span><span><span className="pulse"/> All systems nominal <span className="footer-sep">•</span> Built for modern NOC teams</span></footer>
           </>}
           {active === "Inventory" && <InventoryPage devices={inventory} demo={inventoryDemo} fallback={data.devices} />}
           {active === "Datacenter" && <DatacenterPage />}
@@ -334,6 +334,9 @@ function TopologyPage() {
   const [error, setError] = useState("");
   const [selectedLink, setSelectedLink] = useState("");
   const [selectedNode, setSelectedNode] = useState("");
+  const [nodeMetrics, setNodeMetrics] = useState<HostMetricsPayload | null>(null);
+  const [nodeMetricsLoading, setNodeMetricsLoading] = useState(false);
+  const [nodeMetricsError, setNodeMetricsError] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -370,7 +373,27 @@ function TopologyPage() {
   const canvasHeight = Math.max(210, Math.ceil(data.nodes.length / 3) * 160 + 50);
   const activeLink = data.links.find((link) => link.id === selectedLink) || null;
   const activeNode = data.nodes.find((node) => node.id === selectedNode) || null;
+  const selectedHostId = activeNode?.monitoring_status === "matched" ? activeNode.zabbix_host?.external_id || "" : "";
   const sourceLabel = data.demo ? "DEMONSTRATION GRAPH" : data.monitoring_source === "zabbix" ? "NETBOX + ZABBIX" : "LIVE NETBOX CABLES";
+
+  useEffect(() => {
+    let active = true;
+    if (!selectedHostId) {
+      setNodeMetrics(null);
+      setNodeMetricsLoading(false);
+      setNodeMetricsError("");
+      return () => { active = false; };
+    }
+    setNodeMetrics(null);
+    setNodeMetricsError("");
+    setNodeMetricsLoading(true);
+    fetch(`${api}/api/monitoring/hosts/${encodeURIComponent(selectedHostId)}/metrics`)
+      .then((response) => { if (!response.ok) throw new Error("Zabbix metric query failed"); return response.json(); })
+      .then((payload: HostMetricsPayload) => { if (active) setNodeMetrics(payload); })
+      .catch(() => { if (active) setNodeMetricsError("Zabbix metrics could not be retrieved for this host."); })
+      .finally(() => { if (active) setNodeMetricsLoading(false); });
+    return () => { active = false; };
+  }, [api, selectedHostId]);
 
   return <div className="page-stack">
     <PageTitle eyebrow="NETWORK OPERATIONS • TOPOLOGY" title="Network topology" description="Physical device-to-device links derived from NetBox cable terminations and interface records."/>
@@ -438,6 +461,22 @@ function TopologyPage() {
           <span className="rack-kicker">DEVICE</span><h3>{activeNode.name}</h3><p className="rack-model">{activeNode.device_type || activeNode.role || "Infrastructure device"}</p>
           <div className="detail-list"><div><span>Site</span><b>{activeNode.site || "Not specified"}</b></div><div><span>NetBox status</span><b>{activeNode.asset_status || "Not specified"}</b></div><div><span>Management IP</span><b className="mono">{activeNode.primary_ip || "Not set"}</b></div><div><span>Interfaces in graph</span><b>{activeNode.interface_count}</b></div><div><span>Zabbix match</span><b>{activeNode.zabbix_host?.name || monitoringLabel(activeNode, data.demo)}</b></div><div><span>Host availability</span><b>{data.demo ? "Sample data" : activeNode.monitoring_availability || "Unknown"}</b></div><div><span>Active triggers</span><b>{data.demo ? "Not connected" : activeNode.active_trigger_count ?? "—"}</b></div><div><span>Critical / warnings</span><b>{data.demo ? "—" : `${activeNode.critical_trigger_count ?? 0} / ${activeNode.warning_trigger_count ?? 0}`}</b></div></div>
           {activeNode.monitoring_status === "ambiguous" && <div className="topology-warning"><AlertCircle size={14}/> Multiple Zabbix hosts match this asset: {activeNode.zabbix_candidates?.map((item) => item.name || item.technical_name).join(", ")}.</div>}
+          {activeNode.monitoring_status === "matched" && <div className="topology-telemetry-section">
+            <div className="topology-telemetry-heading"><h3>Latest host metrics</h3><span>LIVE ZABBIX</span></div>
+            {nodeMetricsLoading ? <div className="empty-state">Loading latest Zabbix items…</div>
+              : nodeMetricsError ? <div className="empty-state">{nodeMetricsError}</div>
+              : nodeMetrics?.count ? <>
+                <div className="topology-metric-grid">
+                  {(["cpu", "memory", "disk", "network_in", "network_out"] as const).map((category) => {
+                    const metric = nodeMetrics.summary[category]?.[0];
+                    const label = category === "network_in" ? "Network in" : category === "network_out" ? "Network out" : category.toUpperCase();
+                    return <div className="topology-metric-card" key={category}><span>{label}</span><b>{metric ? `${metric.value ?? "N/A"}${metric.units ? ` ${metric.units}` : ""}` : "—"}</b><small>{metric?.name || "No matching item"}</small></div>;
+                  })}
+                </div>
+                <div className="topology-latest-items">{nodeMetrics.metrics.slice(0, 8).map((metric) => <div key={metric.item_id}><span><b>{metric.name}</b><small>{metric.category} · {metric.key}</small></span><strong>{metric.value ?? "—"} {metric.units}</strong></div>)}</div>
+                <small className="demo-note">Latest values returned by Zabbix item.get. Sampling history is not shown here.</small>
+              </> : <div className="empty-state">Zabbix returned no enabled monitored items for this host.</div>}
+          </div>}
           <div className="topology-interface-list">{activeNode.interfaces.map((item) => <div key={item.id}><b>{item.name}</b><small>{item.type || "Interface"} · {item.enabled ? "Enabled" : "Disabled"}</small></div>)}</div>
         </> : <div className="empty-state">Click a device to review its connected interfaces, or click a line to inspect the cable and both endpoints.</div>}
         <small className="demo-note">{data.demo ? "All nodes, links and sample labels on this page are fictional demonstration data." : "Cable endpoints and device inventory come from NetBox. Host availability and trigger counts come from Zabbix; interface-level telemetry remains in Grafana."}</small>
@@ -480,7 +519,7 @@ function IntegrationsPage({ integrations }: { integrations: IntegrationStatus | 
 function SettingsPage() {
   return <div className="page-stack">
     <PageTitle eyebrow="PLATFORM MANAGEMENT • CONFIGURATION" title="Settings" description="Local environment information and operational safety controls."/>
-    <div className="panel settings-panel"><h2>Environment</h2><div className="settings-row"><span>Application version</span><b>0.8.0</b></div><div className="settings-row"><span>Runtime mode</span><b>Development</b></div><div className="settings-row"><span>API base URL</span><b>http://localhost:8000</b></div><div className="settings-row"><span>Frontend</span><b>React + Vite</b></div><div className="settings-row"><span>Backend</span><b>FastAPI + Python</b></div></div>
+    <div className="panel settings-panel"><h2>Environment</h2><div className="settings-row"><span>Application version</span><b>0.9.0</b></div><div className="settings-row"><span>Runtime mode</span><b>Development</b></div><div className="settings-row"><span>API base URL</span><b>http://localhost:8000</b></div><div className="settings-row"><span>Frontend</span><b>React + Vite</b></div><div className="settings-row"><span>Backend</span><b>FastAPI + Python</b></div></div>
     <div className="panel settings-panel"><h2>Security baseline</h2><div className="security-check"><ShieldCheck size={17}/><div><b>Secrets are environment-based</b><small>Keep API tokens in .env. The file is excluded from Git.</small></div></div><div className="security-check"><ShieldCheck size={17}/><div><b>Read-only integrations</b><small>NetBox and Zabbix adapters only issue retrieval requests.</small></div></div><div className="security-check"><AlertCircle size={17}/><div><b>Not production-hardened</b><small>Authentication, RBAC, tenant isolation and audit controls remain on the roadmap.</small></div></div></div>
   </div>;
 }
