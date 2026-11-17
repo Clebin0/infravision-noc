@@ -60,6 +60,29 @@ async def rack_devices(rack_id: int, limit: int = Query(default=200, ge=1, le=50
         raise HTTPException(status_code=502, detail="NetBox rack device query failed") from None
 
 
+@router.get("/topology/connections")
+async def topology_connections(limit: int = Query(default=500, ge=1, le=500)):
+    if not netbox.configured:
+        return {
+            "source": "demo",
+            "demo": True,
+            "message": "Configure NetBox to load live cable and interface connections.",
+            "nodes": [],
+            "links": [],
+            "connection_count": 0,
+            "device_count": 0,
+            "unsupported_cable_count": 0,
+            "cable_count": 0,
+            "returned_cable_count": 0,
+            "has_more": False,
+        }
+    try:
+        result = await netbox.get_topology(limit=limit)
+        return {"source": "netbox", "demo": False, **result}
+    except httpx.HTTPError:
+        raise HTTPException(status_code=502, detail="NetBox topology query failed") from None
+
+
 @router.get("/monitoring/hosts")
 async def monitoring_hosts():
     if not zabbix.configured:

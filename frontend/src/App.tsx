@@ -14,6 +14,10 @@ type IntegrationStatus = { netbox: ProviderStatus; zabbix: ProviderStatus; demo_
 type InventoryItem = { external_id: string; name: string; status: string | null; device_type: string | null; device_height?: number | null; role: string | null; site: string | null; tenant: string | null; rack: string | null; position: number | null; face: string | null; primary_ip: string | null; source: string; monitoring_status?: string; match_method?: string | null; zabbix_hosts?: { external_id: string; technical_name: string; name: string; status: string }[] };
 type NetBoxRack = { external_id: string; name: string; site: string | null; u_height: number | null; facility: string | null; status: string | null };
 type TriggerItem = { external_id: string; title: string; priority: string; last_change: string; hosts: { hostid: string; host: string; name: string }[]; source: string };
+type TopologyEndpoint = { interface_id: string; interface_name: string; interface_label: string; interface_type: string | null; enabled: boolean | null; device_id: string; device_name: string; device_type: string | null; role: string | null; site: string | null; device_status: string | null };
+type TopologyNode = { id: string; name: string; device_type: string | null; role: string | null; site: string | null; asset_status: string | null; interface_count: number; interfaces: { id: string; name: string; label: string; type: string | null; enabled: boolean | null }[] };
+type TopologyLink = { id: string; cable_id: string; label: string; status: string | null; type: string | null; color: string | null; length: number | null; length_unit: string | null; a: TopologyEndpoint; b: TopologyEndpoint };
+type TopologyData = { source: string; demo: boolean; nodes: TopologyNode[]; links: TopologyLink[]; connection_count: number; device_count: number; unsupported_cable_count: number; cable_count: number; returned_cable_count?: number; has_more: boolean; message?: string };
 
 const fallback: Overview = {
   demo: true,
@@ -113,7 +117,7 @@ function App() {
           <section className="bottom-grid"><div className="panel incidents-panel"><div className="panel-header"><div><h2>Recent incidents</h2><p>Events requiring operator attention</p></div><button className="text-button">Incident center <ArrowUpRight size={14}/></button></div><div className="incident-list">{data.incidents.map((incident) => <div className="incident-row" key={incident.id}><div className={`severity-icon ${incident.severity}`}><AlertCircle size={16}/></div><div className="incident-main"><b>{incident.title}</b><small>{incident.id} <span>•</span> {incident.device}</small></div><span className={`severity-pill ${incident.severity}`}>{incident.severity}</span><small className="incident-age">{incident.age} ago</small></div>)}</div></div>
           <div className="panel integrations-panel"><div className="panel-header"><div><h2>Platform integrations</h2><p>Connected infrastructure services</p></div><button className="more-button">•••</button></div><Integration icon={<Boxes size={18}/>} name="NetBox" desc="Inventory & IPAM" state={providerLabel(integrations?.netbox)}/><Integration icon={<Activity size={18}/>} name="Zabbix" desc="Monitoring & alerting" state={providerLabel(integrations?.zabbix)}/><Integration icon={<Gauge size={18}/>} name="Grafana" desc="Metrics visualization" state="Local service"/></div></section>
 
-          <footer><span>InfraVision NOC <b>v0.6.0</b></span><span><span className="pulse"/> All systems nominal <span className="footer-sep">•</span> Built for modern NOC teams</span></footer>
+          <footer><span>InfraVision NOC <b>v0.7.0</b></span><span><span className="pulse"/> All systems nominal <span className="footer-sep">•</span> Built for modern NOC teams</span></footer>
           </>}
           {active === "Inventory" && <InventoryPage devices={inventory} demo={inventoryDemo} fallback={data.devices} />}
           {active === "Datacenter" && <DatacenterPage />}
@@ -278,20 +282,116 @@ function DatacenterPage() {
 }
 
 function TopologyPage() {
+  const api = import.meta.env.VITE_API_URL || "http://localhost:8000";
+  const [data, setData] = useState<TopologyData>(demoTopology);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [selectedLink, setSelectedLink] = useState("");
+  const [selectedNode, setSelectedNode] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    fetch(`${api}/api/topology/connections`)
+      .then((response) => { if (!response.ok) throw new Error("NetBox topology query failed"); return response.json(); })
+      .then((payload: TopologyData) => {
+        if (!active) return;
+        if (payload.demo) {
+          setData(demoTopology);
+        } else {
+          setData(payload);
+          setSelectedLink("");
+          setSelectedNode(payload.nodes?.[0]?.id || "");
+        }
+        setError("");
+      })
+      .catch(() => {
+        if (!active) return;
+        setData(demoTopology);
+        setError("NetBox could not be reached. Showing the clearly labeled sample topology.");
+      })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [api]);
+
+  const layout = useMemo(() => {
+    const positions = new globalThis.Map<string, { x: number; y: number }>();
+    data.nodes.forEach((node, index) => {
+      positions.set(node.id, { x: 38 + (index % 3) * 330, y: 30 + Math.floor(index / 3) * 160 });
+    });
+    return positions;
+  }, [data.nodes]);
+  const canvasHeight = Math.max(210, Math.ceil(data.nodes.length / 3) * 160 + 50);
+  const activeLink = data.links.find((link) => link.id === selectedLink) || null;
+  const activeNode = data.nodes.find((node) => node.id === selectedNode) || null;
+  const sourceLabel = data.demo ? "DEMONSTRATION GRAPH" : "LIVE NETBOX CABLES";
+
   return <div className="page-stack">
-    <PageTitle eyebrow="NETWORK OPERATIONS • TOPOLOGY" title="Network topology" description="A logical map of the simulated core, security, switching and compute layers."/>
-    <div className="demo-banner"><span><ShieldCheck size={15}/> DEMONSTRATION TOPOLOGY</span><p>Connections are illustrative. Interface-level links will be populated from NetBox cable and interface relationships.</p></div>
-    <div className="panel topology-panel"><div className="panel-header"><div><h2>São Paulo Data Center · Network fabric</h2><p>Logical connectivity overview</p></div><span className="source-pill demo">SAMPLE NETWORK</span></div>
-      <div className="topology-map">
-        <div className="topology-tier"><div className="topology-node core"><Network size={20}/><div><b>CORE-RTR-01</b><small>Core router · 10.10.0.1</small></div><Status status="online"/></div></div>
-        <div className="topology-connectors"><span/><span/></div>
-        <div className="topology-tier two"><div className="topology-node"><ShieldCheck size={20}/><div><b>EDGE-FW-01</b><small>Firewall · 10.10.0.254</small></div><Status status="online"/></div><div className="topology-node"><Network size={20}/><div><b>SPINE-SW-01</b><small>Spine switch · 10.10.0.11</small></div><Status status="online"/></div></div>
-        <div className="topology-connectors"><span/><span/><span/></div>
-        <div className="topology-tier three"><div className="topology-node"><Network size={20}/><div><b>DIST-SW-01</b><small>Distribution · VLAN trunk</small></div><Status status="online"/></div><div className="topology-node"><Network size={20}/><div><b>SPINE-SW-02</b><small>Spine switch · 10.10.0.12</small></div><Status status="warning"/></div><div className="topology-node"><Database size={20}/><div><b>SAN-STORAGE-01</b><small>Storage · 10.10.2.30</small></div><Status status="critical"/></div></div>
-        <div className="topology-connectors"><span/><span/><span/></div>
-        <div className="topology-tier three"><div className="topology-node endpoint"><Server size={19}/><div><b>VM-HOST-01</b><small>Hypervisor · 10.10.1.21</small></div><Status status="online"/></div><div className="topology-node endpoint"><Server size={19}/><div><b>VM-HOST-02</b><small>Hypervisor · 10.10.1.22</small></div><Status status="online"/></div><div className="topology-node endpoint"><Activity size={19}/><div><b>NOC-MON-01</b><small>Zabbix / Grafana</small></div><Status status="online"/></div></div>
+    <PageTitle eyebrow="NETWORK OPERATIONS • TOPOLOGY" title="Network topology" description="Physical device-to-device links derived from NetBox cable terminations and interface records."/>
+    {data.demo
+      ? <div className="demo-banner"><span><ShieldCheck size={15}/> DEMONSTRATION TOPOLOGY</span><p>{error || "This sample network is fictional. Configure NetBox to map real direct interface-to-interface cable connections."}</p></div>
+      : <div className="demo-banner live-rack-banner"><span><CheckCircle2 size={15}/> LIVE NETBOX TOPOLOGY</span><p>Nodes and edges represent direct cable terminations between device interfaces. NetBox inventory state is not a Zabbix health status.</p></div>}
+    <div className="topology-summary">
+      <div className="panel"><span>Devices connected</span><b>{data.device_count}</b></div>
+      <div className="panel"><span>Direct cable links</span><b>{data.connection_count}</b></div>
+      <div className="panel"><span>Cables returned</span><b>{data.returned_cable_count ?? data.cable_count}</b></div>
+      <div className="panel"><span>Unsupported terminations</span><b>{data.unsupported_cable_count}</b></div>
+    </div>
+    {data.has_more && <div className="topology-warning"><AlertCircle size={15}/> NetBox returned more cables than the current 500-record query limit. Refine the inventory or add paginated synchronization.</div>}
+    {data.unsupported_cable_count > 0 && <div className="topology-warning"><AlertCircle size={15}/> {data.unsupported_cable_count} cable records do not have direct interface terminations on both ends. Patch-panel and pass-through path tracing is not included yet.</div>}
+    <div className="topology-workspace">
+      <div className="panel topology-panel topology-graph-panel">
+        <div className="panel-header"><div><h2>Network fabric</h2><p>{loading ? "Loading NetBox connections…" : `${data.nodes.length} devices · ${data.links.length} physical links`}</p></div><span className={data.demo ? "source-pill demo" : "source-pill live"}>{sourceLabel}</span></div>
+        {loading ? <div className="empty-state">Retrieving cable terminations from NetBox…</div>
+        : data.nodes.length === 0
+          ? <div className="empty-state">{data.demo ? "No sample devices are available." : "NetBox returned no direct device-to-device interface connections. Check cable terminations in NetBox."}</div>
+          : <div className="topology-graph-scroller"><div className="topology-graph-canvas" style={{height:canvasHeight}}>
+              <svg className="topology-svg" viewBox={`0 0 1020 ${canvasHeight}`} width="1020" height={canvasHeight} aria-label="Network cable connection graph">
+                {data.links.map((link) => {
+                  const a = layout.get(link.a.device_id);
+                  const b = layout.get(link.b.device_id);
+                  if (!a || !b) return null;
+                  const startX = a.x + 132;
+                  const startY = a.y + 54;
+                  const endX = b.x + 132;
+                  const endY = b.y + 54;
+                  const bend = Math.max(36, Math.abs(endX - startX) * 0.35);
+                  const path = `M ${startX} ${startY} C ${startX + (endX >= startX ? bend : -bend)} ${startY}, ${endX - (endX >= startX ? bend : -bend)} ${endY}, ${endX} ${endY}`;
+                  return <g key={link.id} className={selectedLink === link.id ? "topology-edge selected" : "topology-edge"} onClick={() => { setSelectedLink(link.id); setSelectedNode(""); }}>
+                    <path d={path} className="edge-hit-area"/>
+                    <path d={path} className="edge-line"/>
+                    <text x={(startX + endX) / 2} y={(startY + endY) / 2 - 8}>{link.type || "Cable"}</text>
+                  </g>;
+                })}
+              </svg>
+              {data.nodes.map((node) => {
+                const position = layout.get(node.id);
+                if (!position) return null;
+                const typeLabel = node.device_type || node.role || "Infrastructure device";
+                return <button key={node.id} className={selectedNode === node.id ? "topology-device-node selected" : "topology-device-node"} style={{left:position.x,top:position.y}} onClick={() => { setSelectedNode(node.id); setSelectedLink(""); }}>
+                  <span className="topology-device-icon"><Network size={17}/></span>
+                  <span className="topology-device-copy"><b>{node.name}</b><small>{typeLabel}</small><small>{node.site || "Site not set"}</small></span>
+                  <span className="topology-device-ports">{node.interface_count} IF</span>
+                </button>;
+              })}
+            </div></div>}
+        <div className="topology-foot"><span><i className="green-dot"/> Direct cable connection</span><span><i className="yellow-dot"/> Selected connection</span><span><i className="empty-dot"/> Inventory asset node</span></div>
       </div>
-      <div className="topology-foot"><span><i className="green-dot"/> Healthy link</span><span><i className="yellow-dot"/> Degraded node</span><span><i className="red-dot"/> Critical node</span></div>
+      <aside className="panel topology-inspector">
+        <div className="panel-header"><div><h2>Connection inspector</h2><p>{activeLink ? "Selected physical cable" : activeNode ? "Selected network device" : "Select a node or edge"}</p></div><Network size={17} color="#42cba6"/></div>
+        {activeLink ? <>
+          <span className="rack-kicker">CABLE</span><h3>{activeLink.label || `Cable ${activeLink.cable_id}`}</h3>
+          <div className="topology-endpoint"><span className="rack-kicker">A ENDPOINT</span><b>{activeLink.a.device_name}</b><small>{activeLink.a.interface_name} · {activeLink.a.interface_type || "Interface"}</small></div>
+          <div className="topology-connector-symbol"><Network size={16}/></div>
+          <div className="topology-endpoint"><span className="rack-kicker">B ENDPOINT</span><b>{activeLink.b.device_name}</b><small>{activeLink.b.interface_name} · {activeLink.b.interface_type || "Interface"}</small></div>
+          <div className="detail-list"><div><span>Cable status</span><b>{activeLink.status || "Not specified"}</b></div><div><span>Cable type</span><b>{activeLink.type || "Not specified"}</b></div><div><span>Length</span><b>{activeLink.length ? `${activeLink.length} ${activeLink.length_unit || ""}` : "Not specified"}</b></div><div><span>NetBox cable ID</span><b>#{activeLink.cable_id}</b></div></div>
+        </> : activeNode ? <>
+          <span className="rack-kicker">DEVICE</span><h3>{activeNode.name}</h3><p className="rack-model">{activeNode.device_type || activeNode.role || "Infrastructure device"}</p>
+          <div className="detail-list"><div><span>Site</span><b>{activeNode.site || "Not specified"}</b></div><div><span>NetBox status</span><b>{activeNode.asset_status || "Not specified"}</b></div><div><span>Interfaces in graph</span><b>{activeNode.interface_count}</b></div></div>
+          <div className="topology-interface-list">{activeNode.interfaces.map((item) => <div key={item.id}><b>{item.name}</b><small>{item.type || "Interface"} · {item.enabled ? "Enabled" : "Disabled"}</small></div>)}</div>
+        </> : <div className="empty-state">Click a device to review its connected interfaces, or click a line to inspect the cable and both endpoints.</div>}
+        <small className="demo-note">{data.demo ? "All nodes and links on this page are fictional demonstration data." : "Physical relationships from NetBox. Operational telemetry and interface state require Zabbix."}</small>
+      </aside>
     </div>
   </div>;
 }
@@ -330,7 +430,7 @@ function IntegrationsPage({ integrations }: { integrations: IntegrationStatus | 
 function SettingsPage() {
   return <div className="page-stack">
     <PageTitle eyebrow="PLATFORM MANAGEMENT • CONFIGURATION" title="Settings" description="Local environment information and operational safety controls."/>
-    <div className="panel settings-panel"><h2>Environment</h2><div className="settings-row"><span>Application version</span><b>0.6.0</b></div><div className="settings-row"><span>Runtime mode</span><b>Development</b></div><div className="settings-row"><span>API base URL</span><b>http://localhost:8000</b></div><div className="settings-row"><span>Frontend</span><b>React + Vite</b></div><div className="settings-row"><span>Backend</span><b>FastAPI + Python</b></div></div>
+    <div className="panel settings-panel"><h2>Environment</h2><div className="settings-row"><span>Application version</span><b>0.7.0</b></div><div className="settings-row"><span>Runtime mode</span><b>Development</b></div><div className="settings-row"><span>API base URL</span><b>http://localhost:8000</b></div><div className="settings-row"><span>Frontend</span><b>React + Vite</b></div><div className="settings-row"><span>Backend</span><b>FastAPI + Python</b></div></div>
     <div className="panel settings-panel"><h2>Security baseline</h2><div className="security-check"><ShieldCheck size={17}/><div><b>Secrets are environment-based</b><small>Keep API tokens in .env. The file is excluded from Git.</small></div></div><div className="security-check"><ShieldCheck size={17}/><div><b>Read-only integrations</b><small>NetBox and Zabbix adapters only issue retrieval requests.</small></div></div><div className="security-check"><AlertCircle size={17}/><div><b>Not production-hardened</b><small>Authentication, RBAC, tenant isolation and audit controls remain on the roadmap.</small></div></div></div>
   </div>;
 }
@@ -344,3 +444,54 @@ function MonitoringBadge({ status, method }: { status: string; method?: string |
     : "Demo data";
   return <span className={`monitoring-badge ${normalized}`}>{label}</span>;
 }
+
+
+const demoNodes: TopologyNode[] = [
+  { id: "demo-1", name: "CORE-RTR-01", device_type: "Core router", role: "Routing", site: "São Paulo DC", asset_status: "active", interface_count: 3, interfaces: [{id:"101",name:"Ethernet1",label:"",type:"10GBASE-SR",enabled:true},{id:"102",name:"Ethernet2",label:"",type:"10GBASE-SR",enabled:true},{id:"103",name:"Ethernet3",label:"",type:"10GBASE-SR",enabled:true}] },
+  { id: "demo-2", name: "EDGE-FW-01", device_type: "Firewall", role: "Security", site: "São Paulo DC", asset_status: "active", interface_count: 2, interfaces: [{id:"201",name:"port1",label:"WAN",type:"10GBASE-SR",enabled:true},{id:"202",name:"port2",label:"LAN",type:"10GBASE-SR",enabled:true}] },
+  { id: "demo-3", name: "SPINE-SW-01", device_type: "Spine switch", role: "Switching", site: "São Paulo DC", asset_status: "active", interface_count: 2, interfaces: [{id:"301",name:"Ethernet1/1",label:"",type:"100GBASE-SR4",enabled:true},{id:"302",name:"Ethernet1/2",label:"",type:"100GBASE-SR4",enabled:true}] },
+  { id: "demo-4", name: "DIST-SW-01", device_type: "Distribution switch", role: "Switching", site: "São Paulo DC", asset_status: "active", interface_count: 2, interfaces: [{id:"401",name:"TenGig1/0/1",label:"Uplink",type:"10GBASE-SR",enabled:true},{id:"402",name:"TenGig1/0/2",label:"Uplink",type:"10GBASE-SR",enabled:true}] },
+  { id: "demo-5", name: "SPINE-SW-02", device_type: "Spine switch", role: "Switching", site: "São Paulo DC", asset_status: "active", interface_count: 2, interfaces: [{id:"501",name:"Ethernet1/1",label:"",type:"100GBASE-SR4",enabled:true},{id:"502",name:"Ethernet1/2",label:"",type:"100GBASE-SR4",enabled:true}] },
+  { id: "demo-6", name: "SAN-STORAGE-01", device_type: "Storage array", role: "Storage", site: "São Paulo DC", asset_status: "active", interface_count: 1, interfaces: [{id:"601",name:"FC1",label:"Fabric A",type:"Fibre Channel",enabled:true}] },
+  { id: "demo-7", name: "VM-HOST-01", device_type: "Virtualization server", role: "Compute", site: "São Paulo DC", asset_status: "active", interface_count: 1, interfaces: [{id:"701",name:"vmnic0",label:"",type:"10GBASE-SR",enabled:true}] },
+  { id: "demo-8", name: "VM-HOST-02", device_type: "Virtualization server", role: "Compute", site: "São Paulo DC", asset_status: "active", interface_count: 1, interfaces: [{id:"801",name:"vmnic0",label:"",type:"10GBASE-SR",enabled:true}] },
+  { id: "demo-9", name: "NOC-MON-01", device_type: "Monitoring server", role: "Monitoring", site: "Curitiba POP", asset_status: "active", interface_count: 1, interfaces: [{id:"901",name:"eth0",label:"Management",type:"1000BASE-T",enabled:true}] },
+];
+
+function demoEndpoint(node: TopologyNode, interfaceId: string, interfaceName: string): TopologyEndpoint {
+  const iface = node.interfaces.find((item) => item.id === interfaceId);
+  return {
+    interface_id: interfaceId, interface_name: interfaceName, interface_label: iface?.label || "",
+    interface_type: iface?.type || null, enabled: iface?.enabled ?? null,
+    device_id: node.id, device_name: node.name, device_type: node.device_type,
+    role: node.role, site: node.site, device_status: node.asset_status,
+  };
+}
+
+function demoCable(id: string, aNode: string, aIf: string, aName: string, bNode: string, bIf: string, bName: string): TopologyLink {
+  const a = demoNodes.find((node) => node.id === aNode)!;
+  const b = demoNodes.find((node) => node.id === bNode)!;
+  return {
+    id, cable_id: id, label: `DEMO-CAT6-${id}`, status: "Connected", type: "Cat6 / Fiber",
+    color: null, length: null, length_unit: null,
+    a: demoEndpoint(a, aIf, aName), b: demoEndpoint(b, bIf, bName),
+  };
+}
+
+const demoLinks: TopologyLink[] = [
+  demoCable("D-001","demo-1","101","Ethernet1","demo-2","201","port1"),
+  demoCable("D-002","demo-2","202","port2","demo-3","301","Ethernet1/1"),
+  demoCable("D-003","demo-3","302","Ethernet1/2","demo-4","401","TenGig1/0/1"),
+  demoCable("D-004","demo-3","301","Ethernet1/1","demo-5","501","Ethernet1/1"),
+  demoCable("D-005","demo-5","502","Ethernet1/2","demo-6","601","FC1"),
+  demoCable("D-006","demo-4","402","TenGig1/0/2","demo-7","701","vmnic0"),
+  demoCable("D-007","demo-5","501","Ethernet1/1","demo-8","801","vmnic0"),
+  demoCable("D-008","demo-1","103","Ethernet3","demo-9","901","eth0"),
+];
+
+const demoTopology: TopologyData = {
+  source: "demo", demo: true, nodes: demoNodes, links: demoLinks,
+  connection_count: demoLinks.length, device_count: demoNodes.length,
+  unsupported_cable_count: 0, cable_count: demoLinks.length,
+  returned_cable_count: demoLinks.length, has_more: false,
+};

@@ -71,3 +71,15 @@ def test_rack_devices_endpoint_returns_empty_demo_result_when_unconfigured():
     payload = response.json()
     assert payload["demo"] is True
     assert payload["results"] == []
+
+
+def test_topology_endpoint_returns_empty_demo_graph_when_netbox_is_unconfigured():
+    response = client.get("/api/topology/connections")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["source"] == "demo"
+    assert payload["demo"] is True
+    assert payload["nodes"] == []
+    assert payload["links"] == []
+    assert payload["connection_count"] == 0
+    assert payload["unsupported_cable_count"] == 0

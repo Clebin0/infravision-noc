@@ -9,7 +9,7 @@ from app.settings import settings
 app = FastAPI(
     title="InfraVision NOC API",
     description="Infrastructure inventory and observability correlation API.",
-    version="0.6.0",
+    version="0.7.0",
 )
 
 app.add_middleware(

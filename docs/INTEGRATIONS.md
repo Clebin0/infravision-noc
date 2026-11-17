@@ -25,6 +25,7 @@ Create a dedicated read-only service account/token in Zabbix. Avoid using an adm
 - `GET /api/inventory/devices` — normalized NetBox device inventory.
 - `GET /api/inventory/racks` — normalized NetBox rack inventory.
 - `GET /api/inventory/racks/{rack_id}/devices` — devices assigned to a NetBox rack.
+- `GET /api/topology/connections` — device nodes and direct interface-to-interface cable links normalized from NetBox cable terminations.
 - `GET /api/monitoring/hosts` — normalized Zabbix hosts.
 - `GET /api/monitoring/triggers` — currently active Zabbix triggers.
 - `GET /api/correlation/devices` — NetBox devices correlated with Zabbix hosts by exact hostname, then normalized management IP. Ambiguous candidates are not automatically merged.
@@ -57,3 +58,14 @@ The token is provisioned under Grafana's `secureJsonData.apiToken` field, so Gra
 The provisioned dashboard is named **InfraVision NOC - Zabbix Monitoring**. It includes host-group and host variables, an active-problem queue, and time-series panels for CPU, memory, and network traffic. Metric panels use item-name regular expressions; actual values depend on the item names and templates configured on the connected Zabbix server.
 
 Grafana's Zabbix app requires Grafana 11.6.0 or later and must be both installed and enabled before its data source can be used. InfraVision pins Grafana 11.6.0 in Docker Compose and provisions the app and data source at startup.
+
+
+## NetBox cable topology
+
+The topology adapter reads `/api/dcim/cables/` and builds a device graph from direct `dcim.interface` terminations. The nested termination object supplies the interface and its owning device, so the graph does not need to infer device relationships from names or IP addresses.
+
+Each graph node represents a NetBox device. Each edge represents a direct cable between device interfaces and includes the two interface names, cable ID, label, type, status, and optional length.
+
+The endpoint currently retrieves up to 500 cable records per request. The response includes `has_more` when NetBox reports additional records and `unsupported_cable_count` for cables whose ends are not both direct device interfaces. Cables terminating on patch panels, front ports, rear ports, or pass-through ports are not traced end-to-end yet; those relationships are deliberately excluded rather than guessed.
+
+If NetBox is not configured, the endpoint returns an empty `demo=true` graph. The frontend uses a clearly labeled fictional sample topology only in that demo mode. If NetBox is configured but has no direct device-interface links, the UI displays an empty live result instead of substituting sample data.

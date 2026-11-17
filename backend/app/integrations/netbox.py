@@ -86,6 +86,135 @@ class NetBoxClient:
             "results": [self.normalize_device(item) for item in payload["results"]],
         }
 
+    async def get_topology(self, limit: int = 500) -> dict[str, Any]:
+        payload = await self._get_list("dcim/cables/", {"limit": limit})
+        normalized = self.normalize_topology(payload["results"])
+        return {
+            **normalized,
+            "configured": self.configured,
+            "cable_count": payload["count"],
+            "returned_cable_count": len(payload["results"]),
+            "has_more": payload["has_more"],
+        }
+
+    @staticmethod
+    def normalize_topology(cables: list[dict[str, Any]]) -> dict[str, Any]:
+        """Build device nodes and interface links from NetBox direct cable terminations.
+
+        Only direct device-interface to device-interface cable connections are
+        represented. Cables terminating at patch-panel/pass-through ports are
+        counted separately until NetBox cable-path tracing is implemented.
+        """
+        def display(value: Any) -> Any:
+            if isinstance(value, dict):
+                return value.get("display") or value.get("name") or value.get("label") or value.get("value")
+            return value
+
+        def normalize_endpoint(termination: dict[str, Any]) -> dict[str, Any] | None:
+            if termination.get("object_type") != "dcim.interface":
+                return None
+
+            interface = termination.get("object") or {}
+            device = interface.get("device") or {}
+            device_id = device.get("id")
+            if not device_id:
+                return None
+
+            interface_id = termination.get("object_id") or interface.get("id")
+            if not interface_id:
+                return None
+
+            return {
+                "interface_id": str(interface_id),
+                "interface_name": interface.get("name") or interface.get("display") or "Unnamed interface",
+                "interface_label": interface.get("label") or "",
+                "interface_type": display(interface.get("type")),
+                "enabled": interface.get("enabled"),
+                "device_id": str(device_id),
+                "device_name": device.get("name") or device.get("display_name") or device.get("display") or "Unnamed device",
+                "device_type": display(device.get("device_type")),
+                "role": display(device.get("role")),
+                "site": display(device.get("site")),
+                "device_status": display(device.get("status")),
+            }
+
+        nodes: dict[str, dict[str, Any]] = {}
+        links: list[dict[str, Any]] = []
+        unsupported_cables = 0
+
+        for cable in cables:
+            a_endpoints = [
+                endpoint
+                for termination in cable.get("a_terminations") or []
+                if (endpoint := normalize_endpoint(termination)) is not None
+            ]
+            b_endpoints = [
+                endpoint
+                for termination in cable.get("b_terminations") or []
+                if (endpoint := normalize_endpoint(termination)) is not None
+            ]
+
+            if not a_endpoints or not b_endpoints:
+                unsupported_cables += 1
+                continue
+
+            cable_id = str(cable.get("id", ""))
+            link_index = 0
+            for endpoint_a in a_endpoints:
+                for endpoint_b in b_endpoints:
+                    link_index += 1
+                    links.append({
+                        "id": f"{cable_id}:{link_index}",
+                        "cable_id": cable_id,
+                        "label": cable.get("label") or cable.get("display") or f"Cable {cable_id}",
+                        "status": display(cable.get("status")),
+                        "type": display(cable.get("type")),
+                        "color": cable.get("color"),
+                        "length": cable.get("length"),
+                        "length_unit": display(cable.get("length_unit")),
+                        "a": endpoint_a,
+                        "b": endpoint_b,
+                    })
+
+                    for endpoint in (endpoint_a, endpoint_b):
+                        device_id = endpoint["device_id"]
+                        node = nodes.setdefault(device_id, {
+                            "id": device_id,
+                            "name": endpoint["device_name"],
+                            "device_type": endpoint["device_type"],
+                            "role": endpoint["role"],
+                            "site": endpoint["site"],
+                            "asset_status": endpoint["device_status"],
+                            "interfaces": {},
+                        })
+                        node["interfaces"][endpoint["interface_id"]] = {
+                            "id": endpoint["interface_id"],
+                            "name": endpoint["interface_name"],
+                            "label": endpoint["interface_label"],
+                            "type": endpoint["interface_type"],
+                            "enabled": endpoint["enabled"],
+                        }
+
+        normalized_nodes = []
+        for node in nodes.values():
+            interfaces = list(node.pop("interfaces").values())
+            normalized_nodes.append({
+                **node,
+                "interface_count": len(interfaces),
+                "interfaces": sorted(interfaces, key=lambda item: item["name"]),
+            })
+
+        normalized_nodes.sort(key=lambda item: item["name"].casefold())
+        links.sort(key=lambda item: (item["a"]["device_name"].casefold(), item["b"]["device_name"].casefold(), item["id"]))
+
+        return {
+            "nodes": normalized_nodes,
+            "links": links,
+            "connection_count": len(links),
+            "device_count": len(normalized_nodes),
+            "unsupported_cable_count": unsupported_cables,
+        }
+
     @staticmethod
     def normalize_rack(item: dict[str, Any]) -> dict[str, Any]:
         def display(value: Any) -> Any:

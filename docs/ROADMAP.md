@@ -28,7 +28,9 @@
 - [x] Device telemetry panels for CPU, memory and network traffic, plus problem queue
 - [x] Demonstration network topology page
 - [x] Rack drill-down to a device details panel
-- [ ] Live topology links from NetBox interfaces and cables
+- [x] Live topology nodes and direct interface-to-interface links from NetBox cable terminations
+- [ ] End-to-end tracing through patch panels and pass-through ports
+- [ ] Zabbix health overlays on topology nodes and links
 
 ## Milestone 5 — Production readiness
 - [ ] Authentication and RBAC
