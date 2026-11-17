@@ -5,14 +5,16 @@
 - [x] FastAPI health and overview endpoints
 - [x] React NOC dashboard shell
 - [x] Docker Compose foundation
-- [ ] Local build verification
+- [x] Local frontend build and API checks
 
 ## Milestone 2 — Inventory
 - [x] NetBox configuration and read-only API client
 - [x] Initial device normalization and inventory endpoint
 - [ ] Sites, tenants, interfaces, and richer inventory synchronization
-- [ ] Device identity mapping and Zabbix host correlation
-- [ ] Rack front/rear elevation
+- [x] Device identity correlation by exact hostname and normalized management IP
+- [x] Ambiguous matches surfaced for operator review
+- [x] Demonstration rack front/rear elevation and device detail panel
+- [ ] Live NetBox rack placement and rack-unit mapping
 
 ## Milestone 3 — Monitoring
 - [x] Zabbix JSON-RPC API client
@@ -23,12 +25,14 @@
 ## Milestone 4 — Visualization
 - [ ] Grafana provisioning
 - [ ] Device telemetry panels
-- [ ] Network topology
-- [ ] Drill-down from rack to device to metrics
+- [x] Demonstration network topology page
+- [x] Rack drill-down to a device details panel
+- [ ] Live topology links from NetBox interfaces and cables
 
 ## Milestone 5 — Production readiness
 - [ ] Authentication and RBAC
 - [ ] Tenant isolation tests
 - [ ] Audit log
-- [ ] Integration tests and CI
+- [x] GitHub Actions CI workflow and API/integration tests
+- [ ] Live integration contract tests
 - [ ] Backup, observability, and deployment documentation

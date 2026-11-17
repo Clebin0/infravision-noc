@@ -45,3 +45,13 @@ def test_monitoring_endpoint_returns_empty_demo_hosts_when_unconfigured():
     assert response.status_code == 200
     assert response.json()["demo"] is True
     assert response.json()["results"] == []
+
+
+def test_correlation_requires_both_providers_and_does_not_fake_live_matches():
+    response = client.get("/api/correlation/devices")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["demo"] is True
+    assert payload["source"] == "demo"
+    assert payload["results"] == []
+    assert payload["matched_count"] == 0

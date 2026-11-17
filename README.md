@@ -4,7 +4,7 @@
 
 InfraVision NOC is an open-source NOC platform that brings infrastructure inventory and operational monitoring into one workspace. It is designed to correlate NetBox assets with Zabbix telemetry and present operational context through Grafana and a dedicated web interface.
 
-> Current status: v0.2.0. The FastAPI adapters for NetBox and Zabbix are implemented. Connect read-only API credentials in `.env` to retrieve live inventory and monitoring data. The initial overview still contains clearly labeled fictional demonstration metrics.
+> Current status: v0.5.0. NetBox and Zabbix read-only adapters are connected through a correlation service that matches devices by exact hostname first, then normalized management IP. Ambiguous matches are reported for operator review. Rack views now read live rack records and device placement from NetBox when configured; otherwise, they use clearly labeled fictional sample data. The network topology remains a demonstration until live interface and cable relationships are synchronized.
 
 ## Platform architecture
 
@@ -19,8 +19,8 @@ InfraVision NOC is an open-source NOC platform that brings infrastructure invent
 ## Planned capabilities
 
 - Executive NOC overview with availability and incident KPIs.
-- Device inventory correlated by stable identifiers.
-- Rack elevations with front/rear views and rack-unit placement.
+- Device inventory correlated by exact hostname and normalized management IP, with ambiguous matches isolated for operator review.
+- Rack elevations with live NetBox rack selection, front/rear views, rack-unit placement, and a labeled demo fallback.
 - Device detail pages with CPU, memory, storage, network, and sensor telemetry.
 - Network topology and relationship visualization.
 - Incident triage with severity, acknowledgement, and tenant filters.
@@ -90,10 +90,13 @@ npm run dev
 - [x] FastAPI health and demonstration endpoints
 - [x] NetBox read-only API adapter and normalized device inventory endpoint
 - [x] Zabbix JSON-RPC adapter for hosts and active triggers
+- [x] NetBox-to-Zabbix device correlation endpoint (hostname/IP matching, ambiguity reporting)
 - [ ] Grafana provisioning and embedded dashboard links
-- [ ] Rack elevation and network topology views
+- [x] Demonstration rack elevation with front/rear selection and device drill-down
+- [x] Demonstration network topology and incident center screens
+- [ ] Live rack placement and topology relationships from NetBox
 - [ ] Tenant-aware access control
-- [ ] Integration and end-to-end tests
+- [x] API, inventory, rack normalization, integration, and correlation tests (20 tests passing)
 
 ## License
 
